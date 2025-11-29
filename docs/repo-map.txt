@@ -1,0 +1,78 @@
+[2m2025-12-02T14:45:28.552892Z[0m [32m INFO[0m telemetry disabled [3mmax_workers[0m[2m=[0m32
+models/__init__.py:
+⋮...
+
+models/diffusion/__init__.py:
+│from .pretrained_diffusion import PretrainedDiffusion
+⋮...
+
+models/diffusion/pretrained_diffusion.py:
+│from PIL import Image
+│from typing import TYPE_CHECKING
+│import gc
+│import logging
+│import torch
+⋮...
+│class PretrainedDiffusion
+⋮...
+│def create_pipeline( backbone: str = "sdxl", device: str = "cuda", dtype: torch.dtype = torch.float16, ) -> PretrainedDiffusion
+⋮...
+
+configs/profiles.py:
+│from dataclasses import dataclass
+│from typing import Final
+⋮...
+│@dataclass(frozen=True) @dataclass(frozen=True) class Profile
+│    // Profile configuration for inference.
+⋮...
+│def get_profile(name: str) -> Profile
+⋮...
+│def list_profiles() -> str
+│    // List all available profiles with their descriptions.
+⋮...
+│def validate_profile(name: str, height: int, width: int) -> bool
+⋮...
+
+infer/generate_image.py:
+│from datetime import datetime
+│from pathlib import Path
+│from typing import TYPE_CHECKING, cast
+│import argparse
+│import hashlib
+│import json
+│import logging
+│import subprocess
+│import sys
+│import torch
+⋮...
+│def _export_run_metadata( run_id: str, seed: int, prompt: str, profile_name: str, scheduler_mode: str, num_steps: int, backbone: str, out_path: str, negative_prompt: str | None, ) -> Path
+⋮...
+│def _generate_run_id(seed: int, prompt: str, profile_name: str) -> str
+│    // Generate a unique run ID based on seed, prompt, and profile.
+⋮...
+│def _get_git_hash() -> str
+│    // Get the current git commit hash.
+⋮...
+│def _get_pipeline(backbone: str) -> "DiffusionPipeline"
+⋮...
+│def generate_single_image( prompt: str, backbone: str = "sdxl", profile_name: str = "smoke", scheduler_mode: str = "euler", seed: int = 123, out_path: str = "outputs/test.png", num_steps: int | None = None, negative_prompt: str | None = None, ) -> Path
+⋮...
+│def main() -> None
+│    // Main entry point.
+⋮...
+│def parse_args() -> argparse.Namespace
+│    // Parse command line arguments.
+⋮...
+
+configs/scheduler_loader.py:
+│from typing import TYPE_CHECKING, cast
+│import logging
+⋮...
+│def apply_scheduler_to_pipeline( pipeline: "DiffusionPipeline", scheduler_name: str, _total_steps: int = 20, # noqa: F841(kept for API compatibility) ) -> tuple["DiffusionPipeline", None]
+⋮...
+│def get_scheduler_info(scheduler_name: str) -> dict[str, str] | None
+⋮...
+│def list_available_schedulers() -> dict[str, dict[str, str]]
+│    // Get all available schedulers information.
+⋮...
+

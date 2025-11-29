@@ -1,0 +1,4 @@
+[tool.basedpyright]
+# Only ignore unavoidable warnings from diffusers library
+reportPrivateImportUsage = false
+reportOptionalMemberAccess = false
