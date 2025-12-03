@@ -237,6 +237,41 @@ outputs/
 
 # 9. Minimal Reproducible Code Snippet (Diffusers)
 
+## Using the Project's Configuration System
+
+The project uses a config-based LoRA loading system. Edit `configs/loras.py`:
+
+```python
+# Enable LoRAs by uncommenting them:
+STYLE_LORAS = [
+    LoRAConfig(
+        name="Pastel Anime XL",
+        path="Linaqruf/pastel-anime-xl-lora",  # HuggingFace ID or local path
+        weight=0.8,
+        adapter_name="pastel_anime",
+        type="style",
+    ),
+]
+
+LCM_LORA = LoRAConfig(
+    name="LCM SDXL",
+    path="latent-consistency/lcm-lora-sdxl",
+    weight=1.0,
+    adapter_name="lcm",
+    type="lcm",
+)
+```
+
+Then run:
+
+```bash
+python infer/generate_image.py \
+    --prompt "anime girl, blue hair, red eyes" \
+    --profile 768_lcm
+```
+
+## Direct Diffusers Example
+
 ```python
 from animatediff import AnimateDiffSDXLPipeline
 from diffusers import AutoencoderKL, DPMSolverMultistepScheduler
@@ -251,6 +286,7 @@ pipe = AnimateDiffSDXLPipeline.from_pretrained(
 pipe.unet = torch.compile(pipe.unet)
 pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
 
+# Load LoRAs
 pipe.load_lora_weights("pastel-anime-xl.safetensors", weight=0.8)
 pipe.load_lora_weights("anime-flat-color-xl.safetensors", weight=0.25)
 pipe.load_lora_weights("lcm-sdxl.safetensors", weight=1.0)
@@ -269,6 +305,4 @@ frames = pipe(prompt, num_frames=16, guidance_scale=1.7)
 
 If you need, I can also provide:
 
-* A `config.json` matching this pipeline
 * A run script (`run_video.py`)
-* A LoRA weight tuner

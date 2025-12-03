@@ -1,138 +1,205 @@
-**FINAL.md — SOTA SDXL Anime Video Pipeline (LoRA, AnimateDiff, ControlNet)**
+# FINAL.md — SOTA SDXL Anime Video Pipeline (Contest-Compliant)
 
-## 0) Hard Constraints (Contest Compliance)
+This document is the **single source of truth** for your entire anime video generation system under the **CS492C Visual Generation Contest constraints**.
 
-### 0.1 Allowed Components
-
-* Generative base: **SDXL 1.0 (`stabilityai/stable-diffusion-xl-base-1.0`) only**
-* **Pretrained adapters allowed:**
-
-  * LoRAs (visual + motion)
-  * ControlNets (pose, depth, lineart, etc.)
-  * Temporal adapters (AnimateDiff motion modules)
-* **Inference-time optimizations allowed**: LCM LoRA, fp16/bf16, flash attention, torch.compile
-
-### 0.2 Forbidden
-
-* No pretrained diffusion models besides SDXL 1.0
-* No commercial or closed-source models or tools
-* No direct use of refiner, SD1.5, SD2, other backbone checkpoints
+**Only SDXL 1.0 is allowed as a diffusion backbone.**
+LoRAs, ControlNets, AnimateDiff, Motion LoRAs, LCM, performance optimizations are allowed.
+All ControlNet conditioning must be **internally generated**, not externally supplied.
 
 ---
 
-## 1) Goals and Deliverables
+# 1. System Goals
 
-### Deliverable A (Required)
+### **Primary Goal**
 
-* High-quality anime stills (768x768+)
-* SDXL base with style LoRA
-* Visual + style prompt suite
+* Produce **high‑quality anime images** (768×768 or 1024×1024)
+* SDXL + Anime LoRAs + LCM (4–6 steps)
 
-### Deliverable B (Stretch)
+### **Secondary Goal (Stretch)**
 
-* 8–10s 768p anime video (64+ frames @ 8–12 fps)
-* Smooth motion with AnimateDiff
-* ControlNet-guided composition
-* Temporal consistency
-
----
-
-## 2) Core Architecture
-
-### 2.1 Style Adaptation (LoRA)
-
-* Load **anime style LoRA** (e.g., AnimeProduction, Cybernella AestheticAnime LoRA)
-* Optional: Character-specific LoRA for identity consistency
-* Use 1–2 LoRAs max; apply at 0.5–0.8 scale
-
-### 2.2 Structure Control (ControlNet)
-
-* Load ControlNets for:
-
-  * **OpenPose** (pose guidance)
-  * **Depth** (background coherence)
-  * **LineArt or Edge** (outline preservation)
-* Use **sparse keyframe conditioning** if needed
-
-### 2.3 Motion Adapter (AnimateDiff)
-
-* Load AnimateDiff SDXL motion module
-* Set `num_frames=16`, `fps=8` per segment
-* Optional: Motion LoRAs (e.g. zoom, pan, run)
-
-### 2.4 LoRA+LCM for Speed
-
-* Load **LCM LoRA** for SDXL
-* Set sampler steps = 4–6
-* CFG = 1.5–2.0
+* Produce **8–10 second 768p anime videos**
+* SDXL + AnimateDiff Motion Module
+* Self-generated ControlNet guidance
+* Minimal flicker, consistent identity, stable backgrounds
 
 ---
 
-## 3) Inference Optimizations
+# 2. Architectural Components
 
-* Use `torch.compile(unet)`
-* Enable flash attention (SDPA)
-* Use `torch_dtype=torch.float16` or bf16
-* Seed locking for deterministic runs
+## 2.1 Base Model (required)
 
----
-
-## 4) Data and Prompting
-
-### 4.1 Prompt Style
-
-* Use anime tags + style keywords
-* Include trigger tokens for LoRA (if needed)
-* Use consistent character + scene description
-* Negative prompt: "lowres, watermark, bad anatomy, blur"
-
-### 4.2 Prompt Suite
-
-* ~30 diverse prompts across portrait, action, background
-* Evaluate for line clarity, coherence, color, face stability
+* **Stable Diffusion XL Base 1.0**
+* Use: `torch.float16` or `bfloat16`
+* VAE: **sdxl-vae-fp16-fix** (cleanest, most stable decoding)
 
 ---
 
-## 5) Generation Protocol
+## 2.2 LoRAs (Anime Style)
 
-### Image
+### Required LoRAs
 
-* 768x768, DPM++ 2M or DPM Solver++
-* 28 steps (non-LCM), 4–6 steps (LCM)
-* CFG: 5–7 (non-LCM), 1.5–2 (LCM)
+1. **Pastel Anime XL** — Main style backbone (weight 0.7–0.85)
+2. **Anime Flat Color XL** — Flat-color, stable-cel look (weight 0.15–0.3)
 
-### Video
+### Optional LoRAs
 
-* AnimateDiff + ControlNet
-* 16–64 frames (chunked)
-* 8–12 fps output
-* Optional: frame interpolation post-process
+* **Character LoRA** — if identity stability needed (weight 0.6–0.8)
+* **Aesthetic Anime LoRA** — small polish (weight 0.1–0.2 max)
 
----
-
-## 6) Output Packaging
-
-* Save outputs to `outputs/`
-* For each prompt:
-
-  * image grid
-  * video (mp4)
-  * config + metadata (json)
-* Include LoRA and adapter versions used
+> Use **max 3 LoRAs** simultaneously to avoid interference.
 
 ---
 
-## 7) Evaluation
+# 3. ControlNets (Contest-Compliant)
 
-* Visual: composition, color, fidelity, linework
-* Motion: coherence, flicker, character consistency
-* Style: anime strength, LoRA effectiveness
-* Performance: inference speed per frame
+## ControlNet modules included:
+
+* **OpenPose** (pose stability, motion structure)
+* **Depth** (background + perspective stability)
+* **LineArt / Canny** (outline stabilization)
+
+## ALL ControlNet conditioning must be internally generated from SDXL outputs
+
+**Allowed:**
+
+* Generate keyframe → extract pose/depth/edges → use in ControlNet.
+* Generate multiple self-keyframes → sparse conditioning.
+
+**NOT Allowed:**
+
+* External images, sketches, stick figures.
+* Downloaded depth maps.
+* Manually drawn guides.
 
 ---
 
-**Definition of Done**
+# 4. AnimateDiff Temporal Module
 
-* At least 1 reproducible image and video pipeline
-* Uses only SDXL base + adapters
-* Reproducible from prompt, seed, and config
+### Required
+
+* **AnimateDiff Motion Module for SDXL** (v1.5 preferred)
+
+### Parameters
+
+* `num_frames=16` per segment
+* FPS: **8–12 fps**
+* Chaining: pass last-frame latent → next segment
+
+### Optional
+
+* **Motion LoRA** (pan, zoom, drift)
+* Limit to **one** at a time
+
+---
+
+# 5. LCM Acceleration (Latent Consistency Model)
+
+* Load LCM LoRA for SDXL
+* Steps: **4–6**
+* CFG: **1.5–2.0**
+* Scheduler: DPM++ SDE or DPMSolver++
+
+This achieves **10×–20× speedup** while maintaining excellent anime-style sharpness.
+
+---
+
+# 6. Inference Optimizations
+
+* Use SDPA / Flash Attention (PyTorch 2.x)
+* Enable `torch.compile(unet, mode="max-autotune")`
+* fp16 / bf16 everywhere
+* Disable safety checker
+* Use deterministic seeding
+* Optional tiling for >768p
+
+---
+
+# 7. Prompting Strategy
+
+### Positive Prompt Template
+
+```
+(masterpiece, anime, clean cel-shading), detailed eyes, vivid colors,
+<lora:pastelAnimeXL:0.8>, <lora:animeFlatColorXL:0.25>,
+1 girl, flowing hair, dynamic pose, dramatic lighting
+```
+
+### Negative Prompt Template
+
+```
+bad anatomy, extra limbs, two heads, blurry, low detail, watermark,
+text, distorted face, unstable shading
+```
+
+---
+
+# 8. Full Pipeline Procedure
+
+## **Step 1 — Generate Keyframe(s)**
+
+* Use SDXL + LoRAs (no ControlNet)
+* Generate 1–3 keyframes describing major beats of the motion
+
+## **Step 2 — Extract Internal Control Maps**
+
+For each keyframe:
+
+* Pose Map: OpenPose preprocessor
+* Depth Map: depth estimator
+* LineArt/Canny Map: edge extractor
+
+## **Step 3 — Initialize AnimateDiff**
+
+* Load SDXL Motion Model
+* Apply LoRAs + LCM
+* Apply ControlNet(s) with extracted internal maps
+* Set num_frames=16
+
+## **Step 4 — Generate Segment (16 frames)**
+
+* Save last latent
+* Continue next segment with same config
+
+## **Step 5 — Post-Process**
+
+* Save frames → assemble to mp4
+* Optional frame interpolation
+* Optional SDXL upscaling (legal because still SDXL)
+
+---
+
+# 9. Directory Structure
+
+```
+pipeline/
+  configs/
+  keyframes/
+  controlmaps/
+  segments/
+  outputs/
+    images/
+    video/
+```
+
+---
+
+# 10. Quality Checklist
+
+* Clear, stable anime style
+* Identity does not drift
+* No frame flicker
+* Background remains stable
+* Lines do not wobble
+* Temporal motion is smooth
+* Steps kept to 4–6 (LCM)
+* All ControlNet maps internally generated
+
+---
+
+# 11. Definition of Done
+
+* Reproducible SDXL-only pipeline
+* 1–3 high-quality anime stills
+* 8–10 second stable anime video
+* Full compliance with contest rules
+* Documented seeds, configs, adapter versions

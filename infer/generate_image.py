@@ -91,8 +91,6 @@ def _export_run_metadata(
     backbone: str,
     out_path: str,
     negative_prompt: str | None,
-    lora_path: str | None,
-    lora_scale: float,
     vae_fp32_decode: bool,
 ) -> Path:
     """
@@ -108,8 +106,6 @@ def _export_run_metadata(
         backbone: Model backbone used
         out_path: Output image path
         negative_prompt: Negative prompt used (if any)
-        lora_path: LoRA path (if any)
-        lora_scale: LoRA scale used
         vae_fp32_decode: Whether fp32 decode was used
 
     Returns:
@@ -132,8 +128,6 @@ def _export_run_metadata(
         "backbone": backbone,
         "out_path": str(out_path),
         "negative_prompt": negative_prompt,
-        "lora_path": lora_path,
-        "lora_scale": lora_scale,
         "vae_fp32_decode": vae_fp32_decode,
         "precision": "fp16",
         "compile_enabled": False,
@@ -269,13 +263,10 @@ def generate_single_image(
     out_path: str = "outputs/test.png",
     num_steps: int | None = None,
     negative_prompt: str | None = None,
-    lora_path: str | None = None,
-    lora_scale: float = 0.9,
     vae_fp32_decode: bool = False,
     controlnet_path: str | None = None,
     controlnet_images: str | None = None,
     torch_compile: bool = False,
-    lcm_lora_path: str | None = None,
 ) -> Path:
     """
     Generate a single image from a prompt using SDXL/SD2 with adapters.
@@ -283,19 +274,16 @@ def generate_single_image(
     Args:
         prompt: Text prompt for image generation
         backbone: Model backbone ("sdxl" or "sd2")
-        profile_name: Profile name ("smoke", "768_long", "1024_hq")
+        profile_name: Profile name ("smoke", "768_long", "1024_hq", "768_lcm", "1024_lcm")
         scheduler_mode: Scheduler to use ("euler", "dpm", "unipc")
         seed: Random seed for reproducibility
         out_path: Output file path
         num_steps: Number of inference steps (overrides profile default)
         negative_prompt: Negative prompt to avoid certain features
-        lora_path: Path to LoRA weights file (pretrained or from-scratch)
-        lora_scale: LoRA scale multiplier
         vae_fp32_decode: Decode VAE output in fp32 to avoid artifacts
         controlnet_path: Path to ControlNet model or model ID
         controlnet_images: Path to conditioning images for ControlNet
         torch_compile: Enable torch.compile for UNet acceleration
-        lcm_lora_path: Path to LCM LoRA for fast sampling
 
     Returns:
         Path to generated image file
@@ -312,17 +300,6 @@ def generate_single_image(
 
     if backbone.lower() not in ["sdxl", "sd2", "sd2-base"]:
         raise ValueError("Backbone must be 'sdxl' or 'sd2'")
-
-    # Validate LoRA path if provided
-    if lora_path is not None:
-        lora_path_obj = Path(lora_path)
-        if not lora_path_obj.exists():
-            raise ValueError(f"LoRA file not found: {lora_path}")
-        logger.info(f"Loading LoRA from: {lora_path}")
-
-    # Validate lora_scale
-    if not (0.0 <= lora_scale <= 2.0):
-        raise ValueError("LoRA scale must be between 0.0 and 2.0")
 
     # Import configurations
     from configs.profiles import get_profile
@@ -356,44 +333,53 @@ def generate_single_image(
         backbone=backbone,
         out_path=out_path,
         negative_prompt=negative_prompt,
-        lora_path=lora_path,
-        lora_scale=lora_scale,
         vae_fp32_decode=vae_fp32_decode,
     )
 
     # Generate image
     generator = torch.Generator(device="cuda").manual_seed(seed)
 
-    # Apply LoRA if provided
-    if lora_path is not None:
-        logger.info(f"Loading LoRA from: {lora_path}")
+    # Load LoRAs from config
+    from configs.loras import get_active_loras, lora_summary
+
+    active_loras = get_active_loras(include_lcm=True)
+
+    # Load all configured LoRAs
+    if active_loras:
+        logger.info(lora_summary(active_loras))
         try:
             from diffusers import StableDiffusionXLPipeline
 
             if isinstance(pipeline, StableDiffusionXLPipeline):
-                pipeline.load_lora_weights(lora_path, weight_name="pytorch_lora_weights.safetensors")
-                pipeline.fuse_lora(lora_scale=lora_scale)
+                adapter_names = []
+                adapter_weights = []
+
+                for lora_cfg in active_loras:
+                    logger.info(f"Loading LoRA: {lora_cfg.name} from {lora_cfg.path}")
+                    pipeline.load_lora_weights(
+                        lora_cfg.path,
+                        adapter_name=lora_cfg.adapter_name,
+                    )
+                    adapter_names.append(lora_cfg.adapter_name)
+                    adapter_weights.append(lora_cfg.weight)
+
+                # Set adapter weights
+                if len(adapter_names) > 1:
+                    pipeline.set_adapters(adapter_names, adapter_weights=adapter_weights)
+                elif len(adapter_names) == 1:
+                    pipeline.set_adapters([adapter_names[0]], adapter_weights=[adapter_weights[0]])
+
+                # Check if LCM is loaded for logging
+                has_lcm = any(lora.type == "lcm" for lora in active_loras)
+                if has_lcm:
+                    logger.info("LCM LoRA loaded - using fast sampling mode (4-6 steps)")
+
+                logger.info(f"✓ Loaded {len(active_loras)} LoRA(s)")
             else:
                 logger.warning(f"LoRA loading not fully implemented for {type(pipeline).__name__}")
         except Exception as e:
-            logger.error(f"Failed to load LoRA: {e}")
+            logger.error(f"Failed to load LoRAs: {e}")
             raise RuntimeError(f"LoRA loading failed: {e}") from e
-
-    # Apply LCM LoRA if provided (for fast sampling)
-    if lcm_lora_path is not None:
-        logger.info(f"Loading LCM LoRA from: {lcm_lora_path}")
-        try:
-            from diffusers import StableDiffusionXLPipeline
-
-            if isinstance(pipeline, StableDiffusionXLPipeline):
-                pipeline.load_lora_weights(lcm_lora_path)
-                # LCM LoRA typically uses scale of 1.0
-                logger.info("LCM LoRA loaded - using fast sampling mode (4-6 steps)")
-            else:
-                logger.warning(f"LCM LoRA not fully tested for {type(pipeline).__name__}")
-        except Exception as e:
-            logger.error(f"Failed to load LCM LoRA: {e}")
-            raise RuntimeError(f"LCM LoRA loading failed: {e}") from e
 
     # Apply ControlNet if provided
     if controlnet_path is not None:
@@ -490,7 +476,7 @@ def parse_args() -> argparse.Namespace:
         "--profile",
         type=str,
         default="smoke",
-        choices=["smoke", "768_long", "1024_hq"],
+        choices=["smoke", "768_long", "1024_hq", "768_lcm", "1024_lcm"],
         help="Profile to use (default: smoke)",
     )
     _ = parser.add_argument(
@@ -531,24 +517,12 @@ def parse_args() -> argparse.Namespace:
         help="Run smoke test (deterministic, validates pipeline)",
     )
     _ = parser.add_argument(
-        "--lora",
-        type=str,
-        default=None,
-        help="Path to LoRA weights file (from-scratch trained only)",
-    )
-    _ = parser.add_argument(
-        "--lora-scale",
-        type=float,
-        default=0.9,
-        help="LoRA scale multiplier (default: 0.9)",
-    )
-    _ = parser.add_argument(
         "--vae-fp32-decode",
         action="store_true",
         help="Decode VAE output in fp32 to avoid fp16 artifacts",
     )
 
-    # Add support for adapters (LoRA, ControlNet)
+    # Add support for adapters (ControlNet)
     _ = parser.add_argument(
         "--controlnet",
         type=str,
@@ -565,12 +539,6 @@ def parse_args() -> argparse.Namespace:
         "--torch-compile",
         action="store_true",
         help="Enable torch.compile for UNet acceleration",
-    )
-    _ = parser.add_argument(
-        "--lcm-lora",
-        type=str,
-        default=None,
-        help="Path to LCM LoRA for fast sampling",
     )
 
     # Note: --refiner is still forbidden
@@ -610,13 +578,10 @@ def main() -> None:
             out_path=out_path,  # pyright: ignore[reportAny]
             num_steps=cast(int | None, args.steps),
             negative_prompt=cast(str | None, args.negative_prompt),
-            lora_path=cast(str | None, args.lora),
-            lora_scale=cast(float, args.lora_scale),
             vae_fp32_decode=cast(bool, args.vae_fp32_decode),
             controlnet_path=cast(str | None, args.controlnet),
             controlnet_images=cast(str | None, args.controlnet_images),
             torch_compile=cast(bool, args.torch_compile),
-            lcm_lora_path=cast(str | None, args.lcm_lora),
         )
     except Exception as e:
         logger.error(f"Generation failed: {e}")
