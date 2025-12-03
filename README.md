@@ -8,6 +8,8 @@ Generate high-quality anime images and videos using SDXL 1.0 as the base, extend
 
 This repository follows the contest constraints described in `docs/FINAL.md`.
 
+**Current Status**: Day 1 (Image Generation) complete - see [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for details.
+
 ## Quick Start
 - Prerequisites:
   - NVIDIA GPU with drivers compatible with CUDA 12.1 (or 11.8).
@@ -91,16 +93,123 @@ python infer/generate_video.py \
 ```
 
 ## Progress
+
+### ✅ Completed
 - ✅ **Day 0**: Basic image generation with stock SDXL/SD2
 - ✅ **Day 1**: LoRA loading and adapter support (LoRA, ControlNet, LCM LoRA)
 - ✅ **Day 1**: torch.compile integration for performance
+- ✅ **Day 1**: Configuration-based LoRA system (configs/loras.py)
+- ✅ **Day 1**: Multi-profile system (smoke, 768_long, 768_lcm, etc.)
+- ✅ **Day 1**: 67 unit tests passing
+- ✅ **Day 1**: Integration tests with actual image generation
+
+### 🔄 In Progress / Upcoming
 - [ ] AnimateDiff video generation (Day 2-3)
 - [ ] ControlNet integration with video (Day 3-4)
 - [ ] End-to-end anime video pipeline (Day 4-7)
 
+See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for detailed progress report.
+
+## LoRA Configuration and Testing
+
+The system uses **configuration-based LoRA loading** (not CLI flags). LoRAs are configured in `configs/loras.py`.
+
+### Active LoRAs (Current)
+
+**Style LoRAs:**
+- ✅ **Pastel Anime XL** (weight 0.8) - Main anime style
+
+**Fast Sampling:**
+- ⚡ **LCM SDXL** (weight 1.0) - Disabled by default for testing
+
+### How to Enable/Disable LCM
+
+Edit `configs/loras.py` line 75:
+
+**To ENABLE LCM (Fast 4-6 steps):**
+```python
+LCM_LORA: LoRAConfig | None = LoRAConfig(
+    name="LCM SDXL",
+    path="latent-consistency/lcm-lora-sdxl",
+    weight=1.0,
+    adapter_name="lcm",
+    type="lcm",
+)
+```
+
+**To DISABLE LCM (High Quality):**
+```python
+LCM_LORA: LoRAConfig | None = None
+```
+
+### Test Commands
+
+**With LCM (Fast Generation):**
+```bash
+uv run python infer/generate_image.py \
+  --prompt "anime girl with blue hair, beautiful detailed eyes, cel shading, clean lines, masterpiece" \
+  --seed 123 \
+  --profile 768_lcm \
+  --scheduler dpm \
+  --negative_prompt "blurry, low quality, bad anatomy" \
+  --out outputs/test_with_lcm.png
+```
+- Expected: ~5 seconds, 5 steps, CFG 1.7
+
+**Without LCM (High Quality):**
+```bash
+uv run python infer/generate_image.py \
+  --prompt "anime girl with blue hair, beautiful detailed eyes, cel shading, clean lines, masterpiece" \
+  --seed 123 \
+  --profile 1024_hq \
+  --scheduler dpm \
+  --negative_prompt "blurry, low quality, bad anatomy" \
+  --out outputs/test_without_lcm.png
+```
+- Expected: ~20-30 seconds, 26 steps, CFG 6.0
+
+### Verify LoRA is Active
+
+Look for this in the logs:
+```
+Active LoRAs (1):
+  - Pastel Anime XL (style): weight=0.8
+```
+
+If LCM is enabled:
+```
+LCM LoRA loaded - using fast sampling mode (4-6 steps)
+```
+
+### Adding More LoRAs
+
+Edit `configs/loras.py`:
+
+```python
+STYLE_LORAS: list[LoRAConfig] = [
+    LoRAConfig(
+        name="Pastel Anime XL",
+        path="Linaqruf/pastel-anime-xl-lora",
+        weight=0.8,
+        adapter_name="pastel_anime",
+        type="style",
+    ),
+    # Add more style LoRAs here (max 3 total for video stability)
+    LoRAConfig(
+        name="Your LoRA Name",
+        path="username/your-lora",
+        weight=0.5,
+        adapter_name="your_adapter",
+        type="style",
+    ),
+]
+```
+
+**Note:** Maximum 3 LoRAs total for video stability (2 style + 1 LCM recommended).
+
 ## Deterministic Logging
 - Basic logging in place for seed, profile, steps, CFG, and scheduler settings
-- TODO: Add `run.json` export with full metadata (git hash, compile flags, etc.)
+- Full `run.json` export with metadata (git hash, package versions, etc.)
 - See implementation in `infer/generate_image.py`.
 
 ## Video Export

@@ -131,13 +131,15 @@ def _export_run_metadata(
         "vae_fp32_decode": vae_fp32_decode,
         "precision": "fp16",
         "compile_enabled": False,
-        "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu",
+        "gpu_name": torch.cuda.get_device_name(0)
+        if torch.cuda.is_available()
+        else "cpu",
         "cuda_version": torch.version.cuda if torch.cuda.is_available() else None,
         "torch_version": torch.__version__,
         "diffusers_version": _get_package_version("diffusers"),
-        "package_versions": _get_package_versions([
-            "torch", "torchvision", "diffusers", "transformers", "safetensors"
-        ]),
+        "package_versions": _get_package_versions(
+            ["torch", "torchvision", "diffusers", "transformers", "safetensors"]
+        ),
     }
 
     # Save to file
@@ -183,7 +185,9 @@ def _get_pipeline(backbone: str) -> "DiffusionPipeline":
         )
 
     logger.info(f"Loading {backbone.upper()} pipeline from HuggingFace Diffusers...")
-    logger.info(f"✓ Constraint check passed: Using approved model {ALLOWED_MODELS[backbone_key]}")
+    logger.info(
+        f"✓ Constraint check passed: Using approved model {ALLOWED_MODELS[backbone_key]}"
+    )
 
     # Lazy imports for performance
     try:
@@ -194,8 +198,9 @@ def _get_pipeline(backbone: str) -> "DiffusionPipeline":
 
             # Assert exact model ID match
             model_id = ALLOWED_MODELS[backbone_key]
-            assert model_id == "stabilityai/stable-diffusion-xl-base-1.0", \
+            assert model_id == "stabilityai/stable-diffusion-xl-base-1.0", (
                 "Only SDXL base 1.0 allowed (no refiner)"
+            )
 
             pipeline = StableDiffusionXLPipeline.from_pretrained(  # pyright: ignore[reportUnknownMemberType]
                 model_id,
@@ -210,8 +215,9 @@ def _get_pipeline(backbone: str) -> "DiffusionPipeline":
 
             # Assert exact model ID match
             model_id = ALLOWED_MODELS[backbone_key]
-            assert model_id == "stabilityai/stable-diffusion-2-base", \
+            assert model_id == "stabilityai/stable-diffusion-2-base", (
                 "Only SD2 base allowed (no refiner/ControlNet)"
+            )
 
             pipeline = StableDiffusionPipeline.from_pretrained(  # pyright: ignore[reportUnknownMemberType]
                 model_id,
@@ -282,7 +288,7 @@ def generate_single_image(
         negative_prompt: Negative prompt to avoid certain features
         vae_fp32_decode: Decode VAE output in fp32 to avoid artifacts
         controlnet_path: Path to ControlNet model or model ID
-        controlnet_images: Path to conditioning images for ControlNet
+        controlnet_images: Path to conditioning images for ControlNet (comma-separated or single path)
         torch_compile: Enable torch.compile for UNet acceleration
 
     Returns:
@@ -319,7 +325,28 @@ def generate_single_image(
     # Apply scheduler
     from configs.scheduler_loader import apply_scheduler_to_pipeline
 
-    _ = apply_scheduler_to_pipeline(pipeline, scheduler_mode, actual_steps)
+    # Load LoRAs from config
+    from configs.loras import get_active_loras, lora_summary
+
+    active_loras = get_active_loras(include_lcm=True)
+
+    # Check if LCM LoRA is loaded
+    has_lcm = any(lora.type == "lcm" for lora in active_loras)
+
+    # Apply scheduler - use LCMScheduler if LCM LoRA is present
+    if has_lcm:
+        logger.info("LCM LoRA detected - using LCMScheduler for fast sampling")
+        try:
+            from diffusers import LCMScheduler
+
+            # Replace scheduler with LCM scheduler
+            pipeline.scheduler = LCMScheduler.from_config(pipeline.scheduler.config)
+            logger.info("✓ Applied LCMScheduler for LCM LoRA")
+        except Exception as e:
+            logger.error(f"Failed to apply LCMScheduler: {e}")
+            raise RuntimeError(f"LCMScheduler initialization failed: {e}") from e
+    else:
+        _ = apply_scheduler_to_pipeline(pipeline, scheduler_mode, actual_steps)
 
     # Generate run ID and export metadata
     run_id = _generate_run_id(seed, prompt, profile_name)
@@ -339,11 +366,6 @@ def generate_single_image(
     # Generate image
     generator = torch.Generator(device="cuda").manual_seed(seed)
 
-    # Load LoRAs from config
-    from configs.loras import get_active_loras, lora_summary
-
-    active_loras = get_active_loras(include_lcm=True)
-
     # Load all configured LoRAs
     if active_loras:
         logger.info(lora_summary(active_loras))
@@ -351,32 +373,58 @@ def generate_single_image(
             from diffusers import StableDiffusionXLPipeline
 
             if isinstance(pipeline, StableDiffusionXLPipeline):
+                # Clear any existing adapters to avoid conflicts
+                try:
+                    # Try to unload all adapters
+                    if hasattr(pipeline, "unload_lora_weights"):
+                        logger.info("Clearing existing LoRA adapters...")
+                        pipeline.unload_lora_weights()
+                    elif hasattr(pipeline, "peft_config") and pipeline.peft_config:
+                        # Alternative clearing method
+                        logger.info("Clearing existing LoRA adapters (alternative)...")
+                        pipeline.peft_config = {}
+                        if hasattr(pipeline.unet, "peft_config"):
+                            pipeline.unet.peft_config = {}
+                            pipeline.unet.base_layer.peft_config = {}
+                except Exception as e:
+                    logger.warning(f"Could not clear existing adapters: {e}")
+
                 adapter_names = []
                 adapter_weights = []
 
                 for lora_cfg in active_loras:
                     logger.info(f"Loading LoRA: {lora_cfg.name} from {lora_cfg.path}")
+                    # Prepare load arguments
+                    load_kwargs = {
+                        "adapter_name": lora_cfg.adapter_name,
+                    }
+                    # Add weight_name if specified
+                    if lora_cfg.weight_name is not None:
+                        load_kwargs["weight_name"] = lora_cfg.weight_name
+                        logger.info(f"  Using weight file: {lora_cfg.weight_name}")
+
                     pipeline.load_lora_weights(
                         lora_cfg.path,
-                        adapter_name=lora_cfg.adapter_name,
+                        **load_kwargs,
                     )
                     adapter_names.append(lora_cfg.adapter_name)
                     adapter_weights.append(lora_cfg.weight)
 
-                # Set adapter weights
-                if len(adapter_names) > 1:
-                    pipeline.set_adapters(adapter_names, adapter_weights=adapter_weights)
-                elif len(adapter_names) == 1:
-                    pipeline.set_adapters([adapter_names[0]], adapter_weights=[adapter_weights[0]])
+                # Set adapter weights for all LoRAs
+                pipeline.set_adapters(
+                    adapter_names, adapter_weights=adapter_weights
+                )
 
-                # Check if LCM is loaded for logging
-                has_lcm = any(lora.type == "lcm" for lora in active_loras)
                 if has_lcm:
-                    logger.info("LCM LoRA loaded - using fast sampling mode (4-6 steps)")
+                    logger.info(
+                        "LCM LoRA loaded - using fast sampling mode (4-6 steps)"
+                    )
 
                 logger.info(f"✓ Loaded {len(active_loras)} LoRA(s)")
             else:
-                logger.warning(f"LoRA loading not fully implemented for {type(pipeline).__name__}")
+                logger.warning(
+                    f"LoRA loading not fully implemented for {type(pipeline).__name__}"
+                )
         except Exception as e:
             logger.error(f"Failed to load LoRAs: {e}")
             raise RuntimeError(f"LoRA loading failed: {e}") from e
@@ -385,28 +433,34 @@ def generate_single_image(
     if controlnet_path is not None:
         logger.info(f"Loading ControlNet from: {controlnet_path}")
         try:
-            from diffusers import StableDiffusionXLControlNetPipeline, ControlNetModel
+            from diffusers import ControlNetModel, StableDiffusionXLControlNetPipeline
 
             if isinstance(pipeline, StableDiffusionXLPipeline):
-                controlnet = ControlNetModel.from_pretrained(controlnet_path, torch_dtype=torch.float16)
-                controlnet_pipeline = StableDiffusionXLControlNetPipeline.from_pretrained(
-                    ALLOWED_MODELS[backbone.lower()],
-                    controlnet=controlnet,
-                    torch_dtype=torch.float16,
-                    variant="fp16",
-                    use_safetensors=True,
+                controlnet = ControlNetModel.from_pretrained(
+                    controlnet_path, torch_dtype=torch.float16
+                )
+                controlnet_pipeline = (
+                    StableDiffusionXLControlNetPipeline.from_pretrained(
+                        ALLOWED_MODELS[backbone.lower()],
+                        controlnet=controlnet,
+                        torch_dtype=torch.float16,
+                        variant="fp16",
+                        use_safetensors=True,
+                    )
                 )
                 # Replace pipeline with controlnet pipeline
                 pipeline = controlnet_pipeline
                 logger.info("ControlNet loaded successfully")
             else:
-                logger.warning(f"ControlNet not fully implemented for {type(pipeline).__name__}")
+                logger.warning(
+                    f"ControlNet not fully implemented for {type(pipeline).__name__}"
+                )
         except Exception as e:
             logger.error(f"Failed to load ControlNet: {e}")
             raise RuntimeError(f"ControlNet loading failed: {e}") from e
 
     # Enable torch.compile if requested
-    if torch_compile and hasattr(pipeline, 'unet'):
+    if torch_compile and hasattr(pipeline, "unet"):
         logger.info("Enabling torch.compile for UNet acceleration")
         try:
             pipeline.unet = torch.compile(pipeline.unet, mode="reduce-overhead")
@@ -415,7 +469,7 @@ def generate_single_image(
             logger.warning(f"Failed to enable torch.compile: {e}")
 
     # Apply VAE fp32 decode if requested
-    if vae_fp32_decode and hasattr(pipeline, 'vae'):
+    if vae_fp32_decode and hasattr(pipeline, "vae"):
         logger.info("Enabling fp32 VAE decode to avoid artifacts")
         pipeline.vae.dtype = torch.float32
 
@@ -546,6 +600,7 @@ def parse_args() -> argparse.Namespace:
 
     # Check for forbidden arguments at parse time
     import sys
+
     for arg in forbidden_args:
         if arg in sys.argv:
             parser.error(

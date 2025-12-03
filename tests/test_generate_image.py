@@ -68,8 +68,6 @@ class TestMetadataExport:
                 backbone="sdxl",
                 out_path=str(out_path),
                 negative_prompt="negative",
-                lora_path="/path/to/lora.safetensors",
-                lora_scale=0.9,
                 vae_fp32_decode=True,
             )
 
@@ -85,8 +83,6 @@ class TestMetadataExport:
             assert metadata["num_steps"] == 10
             assert metadata["backbone"] == "sdxl"
             assert metadata["negative_prompt"] == "negative"
-            assert metadata["lora_path"] == "/path/to/lora.safetensors"
-            assert metadata["lora_scale"] == 0.9
             assert metadata["vae_fp32_decode"] is True
 
     def test_export_run_metadata_package_versions(self):
@@ -105,8 +101,6 @@ class TestMetadataExport:
                 backbone="sdxl",
                 out_path=str(out_path),
                 negative_prompt=None,
-                lora_path=None,
-                lora_scale=0.0,
                 vae_fp32_decode=False,
             )
 
@@ -183,10 +177,6 @@ class TestArgumentParsing:
             "30",
             "--negative-prompt",
             "bad prompt",
-            "--lora",
-            "/path/to/lora.safetensors",
-            "--lora-scale",
-            "0.8",
             "--vae-fp32-decode",
         ]
 
@@ -200,8 +190,6 @@ class TestArgumentParsing:
             assert args.backbone == "sdxl"
             assert args.steps == 30
             assert args.negative_prompt == "bad prompt"
-            assert args.lora == "/path/to/lora.safetensors"
-            assert args.lora_scale == 0.8
             assert args.vae_fp32_decode is True
 
     def test_parse_args_forbidden_args(self):
@@ -228,18 +216,18 @@ class TestArgumentParsing:
             args = parse_args()
             assert args.controlnet == "/path/to/controlnet"
 
-    def test_parse_args_lcm_lora_allowed(self):
-        """LCM LoRA should be allowed"""
+    def test_parse_args_controlnet_images(self):
+        """ControlNet images should be allowed"""
         test_args = [
             "--prompt",
             "test prompt",
-            "--lcm-lora",
-            "/path/to/lcm_lora",
+            "--controlnet-images",
+            "/path/to/image.jpg",
         ]
 
         with patch("sys.argv", ["prog"] + test_args):
             args = parse_args()
-            assert args.lcm_lora == "/path/to/lcm_lora"
+            assert args.controlnet_images == "/path/to/image.jpg"
 
     def test_parse_args_torch_compile_allowed(self):
         """torch_compile flag should be allowed"""
@@ -253,18 +241,18 @@ class TestArgumentParsing:
             args = parse_args()
             assert args.torch_compile is True
 
-    def test_parse_args_invalid_lora_scale(self):
-        """Should accept valid lora scale range"""
+    def test_parse_args_with_profile_lcm(self):
+        """Should accept LCM profile with CFG 1.7"""
         test_args = [
             "--prompt",
             "test prompt",
-            "--lora-scale",
-            "1.5",
+            "--profile",
+            "768_lcm",
         ]
 
         with patch("sys.argv", ["prog"] + test_args):
             args = parse_args()
-            assert args.lora_scale == 1.5
+            assert args.profile == "768_lcm"
 
 
 class TestSmokeTest:
@@ -318,23 +306,6 @@ class TestInputValidation:
                 profile_name="smoke",
             )
 
-    @patch("infer.generate_image._get_pipeline")
-    def test_invalid_lora_scale_raises_error(self, mock_get_pipeline):
-        """LoRA scale outside [0.0, 2.0] should raise ValueError"""
-        with pytest.raises(ValueError, match="LoRA scale must be between 0.0 and 2.0"):
-            generate_single_image(
-                prompt="test prompt",
-                lora_scale=3.0,
-            )
-
-    @patch("infer.generate_image._get_pipeline")
-    def test_nonexistent_lora_path_raises_error(self, mock_get_pipeline):
-        """Nonexistent LoRA path should raise ValueError"""
-        with pytest.raises(ValueError, match="LoRA file not found"):
-            generate_single_image(
-                prompt="test prompt",
-                lora_path="/nonexistent/path.safetensors",
-            )
 
 
 class TestProfileSystem:

@@ -26,12 +26,15 @@ class LoRAConfig:
         weight: LoRA weight/scale (0.0-2.0)
         adapter_name: Unique identifier for this adapter in the pipeline
         type: LoRA type for categorization
+        weight_name: Specific weight file name (optional, for precise control)
     """
+
     name: str
     path: str
     weight: float
     adapter_name: str
     type: Literal["style", "character", "lcm", "motion", "utility"]
+    weight_name: str | None = None
 
 
 # =============================================================================
@@ -40,17 +43,19 @@ class LoRAConfig:
 
 # Style LoRAs - anime visual style
 STYLE_LORAS: list[LoRAConfig] = [
-    # Primary anime style - uncomment one of these:
-    # LoRAConfig(
-    #     name="Pastel Anime XL",
-    #     path="Linaqruf/pastel-anime-xl-lora",  # HuggingFace ID
-    #     weight=0.8,
-    #     adapter_name="pastel_anime",
-    #     type="style",
-    # ),
+    # Primary anime style - uncomment to enable
+    LoRAConfig(
+        name="Pastel Anime XL",
+        path="Linaqruf/pastel-anime-xl-lora",  # HuggingFace ID
+        weight=0.8,
+        adapter_name="pastel_anime",
+        type="style",
+        weight_name="pastel-anime-xl.safetensors",  # Specific weight file
+    ),
+    # Note: Additional style LoRA needed - disabled for now
     # LoRAConfig(
     #     name="Anime Flat Color XL",
-    #     path="2vXpSwA7/anime-flat-color-xl",
+    #     path="<verify-correct-hf-path>",
     #     weight=0.25,
     #     adapter_name="flat_color",
     #     type="style",
@@ -70,8 +75,8 @@ CHARACTER_LORAS: list[LoRAConfig] = [
 ]
 
 # LCM LoRA - for fast 4-6 step sampling
+# Disabled for now - testing with just style LoRA
 LCM_LORA: LoRAConfig | None = None
-# Uncomment to enable LCM fast sampling:
 # LCM_LORA = LoRAConfig(
 #     name="LCM SDXL",
 #     path="latent-consistency/lcm-lora-sdxl",
