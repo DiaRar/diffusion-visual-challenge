@@ -87,8 +87,13 @@ class PretrainedDiffusion:
 
         try:
             if self.backbone == "sdxl":
+                from diffusers import AutoencoderKL
                 from diffusers.pipelines.stable_diffusion_xl.pipeline_stable_diffusion_xl import (  # noqa: E501
                     StableDiffusionXLPipeline,
+                )
+
+                vae = AutoencoderKL.from_pretrained(
+                    "madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16
                 )
 
                 self.pipeline = StableDiffusionXLPipeline.from_pretrained(  # pyright: ignore[reportUnknownMemberType]
@@ -96,6 +101,7 @@ class PretrainedDiffusion:
                     torch_typedtype=self.dtype,
                     variant="fp16",
                     use_safetensors=True,
+                    vae=vae,
                 )
 
             elif self.backbone == "sd2":
