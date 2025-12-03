@@ -537,7 +537,7 @@ def parse_args() -> argparse.Namespace:
         "--scheduler",
         type=str,
         default="euler",
-        choices=["euler", "dpm", "unipc"],
+        choices=["euler", "dpm", "unipc", "edm_dpm"],
         help="Scheduler to use (default: euler)",
     )
     _ = parser.add_argument(

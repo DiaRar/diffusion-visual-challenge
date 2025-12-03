@@ -32,6 +32,11 @@ SCHEDULER_CONFIGS: dict[str, dict[str, str]] = {
         "description": "Alternative solver with good quality-speed balance",
         "use_case": "Balanced speed and quality",
     },
+    "edm_dpm": {
+        "class": "EDMDPMSolverMultistepScheduler",
+        "description": "EDM variant of DPM solver for improved sampling",
+        "use_case": "High-quality EDM-based sampling",
+    },
 }
 
 
@@ -85,6 +90,9 @@ def apply_scheduler_to_pipeline(
         from diffusers.schedulers.scheduling_dpmsolver_multistep import (
             DPMSolverMultistepScheduler,
         )
+        from diffusers.schedulers.scheduling_edm_dpmsolver_multistep import (
+            EDMDPMSolverMultistepScheduler,
+        )
         from diffusers.schedulers.scheduling_euler_discrete import (
             EulerDiscreteScheduler,
         )
@@ -95,6 +103,7 @@ def apply_scheduler_to_pipeline(
         # Map class names to actual classes
         scheduler_map: dict[str, type] = {
             "DPMSolverMultistepScheduler": DPMSolverMultistepScheduler,
+            "EDMDPMSolverMultistepScheduler": EDMDPMSolverMultistepScheduler,
             "EulerDiscreteScheduler": EulerDiscreteScheduler,
             "UniPCMultistepScheduler": UniPCMultistepScheduler,
         }
