@@ -98,7 +98,7 @@ class PretrainedDiffusion:
 
                 self.pipeline = StableDiffusionXLPipeline.from_pretrained(  # pyright: ignore[reportUnknownMemberType]
                     self.MODEL_IDS[self.backbone],
-                    torch_typedtype=self.dtype,
+                    torch_dtype=self.dtype,
                     variant="fp16",
                     use_safetensors=True,
                     vae=vae,
