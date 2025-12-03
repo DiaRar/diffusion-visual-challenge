@@ -2,9 +2,13 @@
 
 This document is the **single source of truth** for your entire anime video generation system under the **CS492C Visual Generation Contest constraints**.
 
-**Only SDXL 1.0 is allowed as a diffusion backbone.**
-LoRAs, ControlNets, AnimateDiff, Motion LoRAs, LCM, performance optimizations are allowed.
-All ControlNet conditioning must be **internally generated**, not externally supplied.
+> **CRITICAL RULE UPDATE (Slack Clarifications):**
+> *   **SDXL 1.0** is the primary backbone. **SD 2 (Stable Diffusion 2)** is allowed as a lightweight alternative.
+> *   **No External Visual Input at Inference**: You cannot use existing images, sketches, or manually drawn pose maps as input to ControlNet/img2img.
+> *   **Internal Generation Allowed**: If your model generates a conditioning signal (e.g., text-to-image -> pose extraction), you CAN use that signal to guide further generation.
+> *   **AnimateDiff Allowed**: Explicitly permitted as an "additional neural network for guidance".
+> *   **Post-Processing Allowed**: Basic cropping, zooming, scaling of final output is permitted.
+> *   **Data Restrictions**: Fine-tuning allowed only with FREE data (no paid assets).
 
 ---
 
@@ -12,112 +16,101 @@ All ControlNet conditioning must be **internally generated**, not externally sup
 
 ### **Primary Goal**
 
-* Produce **high‑quality anime images** (768×768 or 1024×1024)
-* SDXL + Anime LoRAs + LCM (4–6 steps)
+*   Produce **high‑quality anime images** (768×768 or 1024×1024)
+*   SDXL (or SD2) + Anime LoRAs + LCM (4–6 steps)
 
 ### **Secondary Goal (Stretch)**
 
-* Produce **8–10 second 768p anime videos**
-* SDXL + AnimateDiff Motion Module
-* Self-generated ControlNet guidance
-* Minimal flicker, consistent identity, stable backgrounds
+*   Produce **8–10 second 768p anime videos**
+*   SDXL/SD2 + AnimateDiff Motion Module
+*   **Self-generated** ControlNet guidance (no external images)
+*   Minimal flicker, consistent identity, stable backgrounds
 
 ---
 
 # 2. Architectural Components
 
-## 2.1 Base Model (required)
+## 2.1 Base Model (Required)
 
-* **Stable Diffusion XL Base 1.0**
-* Use: `torch.float16` or `bfloat16`
-* VAE: **sdxl-vae-fp16-fix** (cleanest, most stable decoding)
-
----
+*   **Stable Diffusion XL Base 1.0** OR **Stable Diffusion 2**
+*   Use: `torch.float16` or `bfloat16`
+*   VAE: `sdxl-vae-fp16-fix` (for SDXL) or standard SD2 VAE
 
 ## 2.2 LoRAs (Anime Style)
 
 ### Required LoRAs
-
-1. **Pastel Anime XL** — Main style backbone (weight 0.7–0.85)
-2. **Anime Flat Color XL** — Flat-color, stable-cel look (weight 0.15–0.3)
+1.  **Pastel Anime XL** — Main style backbone (weight 0.7–0.85)
+2.  **Anime Flat Color XL** — Flat-color, stable-cel look (weight 0.15–0.3)
 
 ### Optional LoRAs
-
-* **Character LoRA** — if identity stability needed (weight 0.6–0.8)
-* **Aesthetic Anime LoRA** — small polish (weight 0.1–0.2 max)
+*   **Character LoRA** — if identity stability needed (weight 0.6–0.8)
+*   **Aesthetic Anime LoRA** — small polish (weight 0.1–0.2 max)
 
 > Use **max 3 LoRAs** simultaneously to avoid interference.
 
 ---
 
-# 3. ControlNets (Contest-Compliant)
+# 3. ControlNets (Strict Compliance)
 
 ## ControlNet modules included:
+*   **OpenPose** (pose stability, motion structure)
+*   **Depth** (background + perspective stability)
+*   **LineArt / Canny** (outline stabilization)
 
-* **OpenPose** (pose stability, motion structure)
-* **Depth** (background + perspective stability)
-* **LineArt / Canny** (outline stabilization)
+## CRITICAL: Conditioning Rules
+**ALL ControlNet conditioning must be internally generated.**
 
-## ALL ControlNet conditioning must be internally generated from SDXL outputs
+**✅ Allowed:**
+*   Text-to-Image generation -> Extract Pose/Depth -> Use as ControlNet input for Video.
+*   Text-to-Image generation -> Extract Canny edges -> Use as ControlNet input.
+*   Using AnimateDiff with text prompts only (no ControlNet).
 
-**Allowed:**
-
-* Generate keyframe → extract pose/depth/edges → use in ControlNet.
-* Generate multiple self-keyframes → sparse conditioning.
-
-**NOT Allowed:**
-
-* External images, sketches, stick figures.
-* Downloaded depth maps.
-* Manually drawn guides.
+**❌ NOT Allowed:**
+*   Inputting an external image (e.g., from Google Images, ArtStation) to guide generation.
+*   Inputting a hand-drawn sketch or stick figure.
+*   Inputting a manually created/edited depth map or pose map.
+*   Using commercial tools (ChatGPT, Midjourney) to generate the input.
 
 ---
 
 # 4. AnimateDiff Temporal Module
 
 ### Required
-
-* **AnimateDiff Motion Module for SDXL** (v1.5 preferred)
+*   **AnimateDiff Motion Module** (SDXL or SD2 version)
 
 ### Parameters
-
-* `num_frames=16` per segment
-* FPS: **8–12 fps**
-* Chaining: pass last-frame latent → next segment
+*   `num_frames=16` per segment
+*   FPS: **8–12 fps**
+*   Chaining: pass last-frame latent → next segment
 
 ### Optional
-
-* **Motion LoRA** (pan, zoom, drift)
-* Limit to **one** at a time
+*   **Motion LoRA** (pan, zoom, drift) - limit to one at a time.
 
 ---
 
 # 5. LCM Acceleration (Latent Consistency Model)
 
-* Load LCM LoRA for SDXL
-* Steps: **4–6**
-* CFG: **1.5–2.0**
-* Scheduler: DPM++ SDE or DPMSolver++
-
-This achieves **10×–20× speedup** while maintaining excellent anime-style sharpness.
+*   Load LCM LoRA for SDXL/SD2
+*   Steps: **4–6**
+*   CFG: **1.5–2.0**
+*   Scheduler: DPM++ SDE or DPMSolver++
+*   **Benefit**: 10×–20× speedup while maintaining quality.
 
 ---
 
 # 6. Inference Optimizations
 
-* Use SDPA / Flash Attention (PyTorch 2.x)
-* Enable `torch.compile(unet, mode="max-autotune")`
-* fp16 / bf16 everywhere
-* Disable safety checker
-* Use deterministic seeding
-* Optional tiling for >768p
+*   Use SDPA / Flash Attention (PyTorch 2.x)
+*   Enable `torch.compile(unet, mode="max-autotune")`
+*   fp16 / bf16 everywhere
+*   Disable safety checker
+*   Use deterministic seeding
 
 ---
 
 # 7. Prompting Strategy
 
 ### Positive Prompt Template
-
 ```
 (masterpiece, anime, clean cel-shading), detailed eyes, vivid colors,
 <lora:pastelAnimeXL:0.8>, <lora:animeFlatColorXL:0.25>,
@@ -125,7 +118,6 @@ This achieves **10×–20× speedup** while maintaining excellent anime-style sh
 ```
 
 ### Negative Prompt Template
-
 ```
 bad anatomy, extra limbs, two heads, blurry, low detail, watermark,
 text, distorted face, unstable shading
@@ -133,73 +125,52 @@ text, distorted face, unstable shading
 
 ---
 
-# 8. Full Pipeline Procedure
+# 8. Full Pipeline Procedure (Compliant Video)
 
-## **Step 1 — Generate Keyframe(s)**
+## **Step 1 — (Optional) Generate Internal Reference**
+*   Use Text-to-Image (SDXL/SD2) to generate a starting frame or keyframe.
+*   **Rule**: This image MUST be generated by your model, not imported.
 
-* Use SDXL + LoRAs (no ControlNet)
-* Generate 1–3 keyframes describing major beats of the motion
-
-## **Step 2 — Extract Internal Control Maps**
-
-For each keyframe:
-
-* Pose Map: OpenPose preprocessor
-* Depth Map: depth estimator
-* LineArt/Canny Map: edge extractor
+## **Step 2 — (Optional) Extract Control Signal**
+*   If using ControlNet: Run OpenPose/Depth preprocessor on the *generated* image from Step 1.
+*   Use this internal map to guide the video generation.
 
 ## **Step 3 — Initialize AnimateDiff**
+*   Load Motion Model
+*   Apply LoRAs + LCM
+*   Set num_frames=16
 
-* Load SDXL Motion Model
-* Apply LoRAs + LCM
-* Apply ControlNet(s) with extracted internal maps
-* Set num_frames=16
-
-## **Step 4 — Generate Segment (16 frames)**
-
-* Save last latent
-* Continue next segment with same config
+## **Step 4 — Generate Segment**
+*   Generate 16 frames.
+*   Use last latent as context for next segment (smooth transitions).
 
 ## **Step 5 — Post-Process**
-
-* Save frames → assemble to mp4
-* Optional frame interpolation
-* Optional SDXL upscaling (legal because still SDXL)
-
----
-
-# 9. Directory Structure
-
-```
-pipeline/
-  configs/
-  keyframes/
-  controlmaps/
-  segments/
-  outputs/
-    images/
-    video/
-```
+*   Save frames → assemble to MP4 (ffmpeg).
+*   Basic cropping/scaling allowed.
+*   Frame interpolation (e.g., RIFE) allowed if open-source model.
 
 ---
 
-# 10. Quality Checklist
+# 9. Submission Requirements
 
-* Clear, stable anime style
-* Identity does not drift
-* No frame flicker
-* Background remains stable
-* Lines do not wobble
-* Temporal motion is smooth
-* Steps kept to 4–6 (LCM)
-* All ControlNet maps internally generated
+### Deliverables
+*   **Poster**: PDF, max 10MB.
+*   **Source Code & Data**: Must reproduce results.
+*   **Write-up**: PDF, max 4 pages. Must include:
+    *   Project Title, Names, IDs
+    *   Technical & Artistic description
+    *   Reproduction steps
+    *   **Citations**: List ALL pretrained checkpoints (SDXL, LoRAs, ControlNets, AnimateDiff) with links.
+
+### Presentation
+*   Online via Gather.town (Dec 8 or Dec 10).
+*   Mandatory attendance.
 
 ---
 
-# 11. Definition of Done
+# 10. Definition of Done
 
-* Reproducible SDXL-only pipeline
-* 1–3 high-quality anime stills
-* 8–10 second stable anime video
-* Full compliance with contest rules
-* Documented seeds, configs, adapter versions
+*   Reproducible SDXL/SD2 pipeline.
+*   1–3 high-quality anime stills.
+*   8–10 second stable anime video.
+*   **Full compliance with contest rules (No external inputs).**
