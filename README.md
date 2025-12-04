@@ -6,6 +6,11 @@ Generate high-quality anime images and videos using SDXL 1.0 as the base, extend
 - **AnimateDiff**: Motion generation for video
 - **LCM LoRA**: Fast sampling (4-6 steps)
 
+**Key Features**:
+- ✅ **Single-scheduler architecture**: Automatic selection between DPM++ 2M (HQ) and LCMScheduler (fast LCM mode)
+- ✅ **No manual scheduler configuration required**
+- ✅ **67 unit tests passing** with full integration testing
+
 This repository follows the contest constraints described in `docs/FINAL.md`.
 
 **Current Status**: Day 1 (Image Generation) complete - see [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for details.
@@ -24,6 +29,7 @@ This repository follows the contest constraints described in `docs/FINAL.md`.
   - `uv run python infer/generate_image.py --smoke --prompt "smoke test" --seed 123 --profile smoke --out outputs/test.png`
   - Verify reproducibility by regenerating with the same seed and profile
   - Test adapters: `uv run python infer/generate_image.py --lora /path/to/lora --smoke --prompt "smoke test" --seed 123`
+  - **Note**: Scheduler is automatically selected - no configuration needed
 
 ## Repository Structure
 - `models/` — model components (UNet/VAE/temporal/control/mask adapters).
@@ -43,9 +49,12 @@ python infer/generate_image.py \
   --prompt "anime character with blue hair" \
   --seed 123 \
   --profile 768_long \
-  --scheduler dpm \
   --out outputs/image_001.png
 ```
+
+**Note**: Scheduler is automatically selected based on configuration:
+- **High-Quality Mode**: Uses DPM++ 2M with Karras sigmas (26 steps, CFG 6.0)
+- **Fast Mode** (with LCM): Uses LCMScheduler (4-6 steps, CFG 1.7)
 
 ### With Adapters (LoRA, ControlNet, LCM LoRA)
 ```bash
@@ -79,6 +88,10 @@ python infer/generate_image.py \
   --profile 768_long \
   --out outputs/optimized_001.png
 ```
+
+**Automatic Scheduler Selection**: The system automatically chooses the optimal scheduler:
+- **DPM++ 2M** (Karras sigmas) for high-quality generation (20-30 steps, CFG 6.0)
+- **LCMScheduler** when LCM LoRA is enabled (4-6 steps, CFG 1.7)
 
 ### Video Generation (with AnimateDiff)
 ```bash
@@ -150,11 +163,10 @@ uv run python infer/generate_image.py \
   --prompt "anime girl with blue hair, beautiful detailed eyes, cel shading, clean lines, masterpiece" \
   --seed 123 \
   --profile 768_lcm \
-  --scheduler dpm \
   --negative_prompt "blurry, low quality, bad anatomy" \
   --out outputs/test_with_lcm.png
 ```
-- Expected: ~5 seconds, 5 steps, CFG 1.7
+- Expected: ~5 seconds, 5 steps, CFG 1.7 (uses LCMScheduler)
 
 **Without LCM (High Quality):**
 ```bash
@@ -162,11 +174,10 @@ uv run python infer/generate_image.py \
   --prompt "anime girl with blue hair, beautiful detailed eyes, cel shading, clean lines, masterpiece" \
   --seed 123 \
   --profile 1024_hq \
-  --scheduler dpm \
   --negative_prompt "blurry, low quality, bad anatomy" \
   --out outputs/test_without_lcm.png
 ```
-- Expected: ~20-30 seconds, 26 steps, CFG 6.0
+- Expected: ~20-30 seconds, 26 steps, CFG 6.0 (uses DPM++ 2M with Karras sigmas)
 
 ### Verify LoRA is Active
 

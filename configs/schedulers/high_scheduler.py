@@ -109,7 +109,7 @@ def apply_best_hq_scheduler(
             lower_order_final=False,
             euler_at_final=True,
             final_sigmas_type="zero",
-            timestep_spacing="trailing",
+            timestep_spacing="linspace",
             use_karras_sigmas=bool(use_karras_sigmas),
             use_lu_lambdas=bool(use_lu_lambdas),
             use_exponential_sigmas=False,

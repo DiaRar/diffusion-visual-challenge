@@ -30,12 +30,16 @@ This TODO reflects everything allowed under contest rules:
 * [x] Add LCM LoRA loader (4–6 steps, CFG 1.5–2) ✓ ACTIVE
 * [x] Add configuration-based LoRA loading (configs/loras.py)
 * [x] Add deterministic seed handler
+* [x] Implement **single-scheduler architecture**:
+  * DPM++ 2M with Karras sigmas (high-quality mode)
+  * LCMScheduler (fast mode with LCM LoRA)
 * [x] Validate single-frame output quality ✓ TESTED
 
 **Testing Results:**
 - 67 unit tests passing
 - Integration tests generating images successfully
-- LCM fast sampling working (4-6 steps)
+- LCM fast sampling working (4-6 steps, LCMScheduler)
+- High-quality mode working (26 steps, DPM++ 2M)
 - torch.compile integration working (+10-15% speedup)
 - Performance: smoke (3s), 768_lcm (5s), 768_long (8s)
 
