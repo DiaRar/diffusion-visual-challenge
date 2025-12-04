@@ -7,3 +7,5 @@ reports/
 *.json
 tmp/
 .venv/
+.DS_Store
+*.log

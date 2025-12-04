@@ -31,7 +31,7 @@ class TestSchedulerConfigs:
         """DPM scheduler config should have required fields"""
         config = SCHEDULER_CONFIGS["dpm"]
         assert "class" in config
-        assert config["class"] == "DPMSolverMultistepScheduler"
+        assert config["class"] == "HighQualityDPMScheduler"
         assert "description" in config
         assert "use_case" in config
 
@@ -146,10 +146,12 @@ class TestSchedulerIntegration:
         from diffusers.schedulers.scheduling_unipc_multistep import (
             UniPCMultistepScheduler,
         )
+        from configs.my_scheduler import HighQualityDPMScheduler
 
         class_map = {
             "EulerDiscreteScheduler": EulerDiscreteScheduler,
             "DPMSolverMultistepScheduler": DPMSolverMultistepScheduler,
+            "HighQualityDPMScheduler": HighQualityDPMScheduler,
             "UniPCMultistepScheduler": UniPCMultistepScheduler,
         }
 
