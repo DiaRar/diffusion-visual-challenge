@@ -151,13 +151,12 @@ def _export_run_metadata(
     return run_json_path
 
 
-def _get_pipeline(backbone: str, use_block_unet: bool = True) -> "DiffusionPipeline":
+def _get_pipeline(backbone: str) -> "DiffusionPipeline":
     """
     Get or create a cached diffusion pipeline for SDXL.
 
     Args:
         backbone: Model backbone (only "sdxl" supported)
-        use_block_unet: Whether to use custom UNet2DConditionModelV2025 (default: True)
 
     Returns:
         Cached diffusion pipeline
@@ -194,30 +193,6 @@ def _get_pipeline(backbone: str, use_block_unet: bool = True) -> "DiffusionPipel
         variant="fp16",
         use_safetensors=True,
     )
-
-    # Apply custom UNet if requested
-    if use_block_unet:
-        from minisdxl.sdxl_rewrite import UNet2DConditionModelV2025, UNetV2025Config
-
-        unet = (
-            UNet2DConditionModelV2025(
-                UNetV2025Config(use_sdpa=True, qk_norm=True, zero_init_residual=False)
-            )
-            .cuda()
-            .half()
-        )
-        unet.load_state_dict(pipeline.unet.state_dict())
-        pipeline.unet = unet
-        logger.info("✓ Applied custom UNet2DConditionModelV2025")
-
-        # Check if custom UNet has LoRA support
-        has_lora_support = hasattr(unet, "load_lora_safetensors")
-        if has_lora_support:
-            logger.info("✓ Custom UNet has native LoRA support")
-        else:
-            logger.info(
-                "ℹ Custom UNet LoRA support not detected - using compatibility mode"
-            )
 
     # Enable memory optimizations
     _ = pipeline.to("cuda", torch.float16)  # pyright: ignore[reportUnknownMemberType] # noqa: E501
@@ -306,27 +281,7 @@ def generate_single_image(
 
     active_loras = get_active_loras(include_lcm=True)
 
-    # Check if custom UNet has LoRA support (native load_lora_safetensors method)
-    try:
-        from minisdxl.sdxl_rewrite import UNet2DConditionModelV2025
-
-        unet_lora_support = hasattr(UNet2DConditionModelV2025, "load_lora_safetensors")
-    except Exception:
-        unet_lora_support = False
-
-    # Decide whether to use custom UNet
-    use_custom_unet = True
-    if len(active_loras) > 0 and not unet_lora_support:
-        logger.info(
-            "LoRA(s) detected - skipping custom UNet (LoRA support not available)"
-        )
-        use_custom_unet = False
-    elif unet_lora_support:
-        logger.info(
-            "Custom UNet with LoRA support detected - using for optimal performance"
-        )
-
-    pipeline = _get_pipeline(backbone, use_block_unet=use_custom_unet)
+    pipeline = _get_pipeline(backbone)
 
     # Check if LCM LoRA is loaded
     has_lcm = any(lora.type == "lcm" for lora in active_loras)
@@ -368,108 +323,41 @@ def generate_single_image(
     if active_loras:
         logger.info(lora_summary(active_loras))
         try:
-            # Check if we're using BlockUNet with native LoRA support
-            from minisdxl.sdxl_rewrite import UNet2DConditionModelV2025
+            # Clear any existing adapters to avoid conflicts
+            try:
+                if hasattr(pipeline, "unload_lora_weights"):
+                    logger.info("Clearing existing LoRA adapters...")
+                    pipeline.unload_lora_weights()
+                elif hasattr(pipeline, "peft_config") and pipeline.peft_config:
+                    logger.info("Clearing existing LoRA adapters (alternative)...")
+                    pipeline.peft_config = {}
+                    if hasattr(pipeline.unet, "peft_config"):
+                        pipeline.unet.peft_config = {}
+            except Exception as e:
+                logger.warning(f"Could not clear existing adapters: {e}")
 
-            using_native_lora = isinstance(pipeline.unet, UNet2DConditionModelV2025)
+            adapter_names = []
+            adapter_weights = []
 
-            if using_native_lora:
-                # Use custom UNet's native LoRA loading
-                logger.info("Using custom UNet native LoRA support")
-                adapter_names = []
+            for lora_cfg in active_loras:
+                logger.info(f"Loading LoRA: {lora_cfg.name} from {lora_cfg.path}")
+                load_kwargs = {
+                    "adapter_name": lora_cfg.adapter_name,
+                }
+                if lora_cfg.weight_name is not None:
+                    load_kwargs["weight_name"] = lora_cfg.weight_name
+                    logger.info(f"  Using weight file: {lora_cfg.weight_name}")
 
-                for lora_cfg in active_loras:
-                    logger.info(f"Loading LoRA: {lora_cfg.name} from {lora_cfg.path}")
-
-                    # Determine the safetensors file path
-                    lora_path = Path(lora_cfg.path)
-                    if lora_path.is_dir():
-                        # If it's a directory, look for the weight file
-                        if lora_cfg.weight_name:
-                            safetensors_path = str(lora_path / lora_cfg.weight_name)
-                        else:
-                            # Try common names
-                            for name in [
-                                "pytorch_lora_weights.safetensors",
-                                "lora.safetensors",
-                            ]:
-                                candidate = lora_path / name
-                                if candidate.exists():
-                                    safetensors_path = str(candidate)
-                                    break
-                            else:
-                                # Find any .safetensors file
-                                safetensors_files = list(
-                                    lora_path.glob("*.safetensors")
-                                )
-                                if safetensors_files:
-                                    safetensors_path = str(safetensors_files[0])
-                                else:
-                                    raise RuntimeError(
-                                        f"No .safetensors file found in {lora_path}"
-                                    )
-                    else:
-                        safetensors_path = str(lora_path)
-
-                    logger.info(f"  Loading from: {safetensors_path}")
-
-                    # Load using custom UNet's native method
-                    result = pipeline.unet.load_lora_safetensors(
-                        lora_path=safetensors_path,
-                        adapter_name=lora_cfg.adapter_name,
-                        scale=lora_cfg.weight,
-                        strict=False,
-                    )
-                    logger.info(
-                        f"  Loaded {result['loaded']} layers, missed {result['missed']}"
-                    )
-                    adapter_names.append(lora_cfg.adapter_name)
-
-                # Activate all adapters
-                pipeline.unet.set_adapters(tuple(adapter_names), global_scale=1.0)
-                logger.info(
-                    f"✓ Loaded {len(active_loras)} LoRA(s) via custom UNet native support"
+                pipeline.load_lora_weights(
+                    lora_cfg.path,
+                    **load_kwargs,
                 )
+                adapter_names.append(lora_cfg.adapter_name)
+                adapter_weights.append(lora_cfg.weight)
 
-            else:
-                # Fallback to diffusers LoRA loading
-                logger.info("Using diffusers LoRA loading (custom UNet not active)")
-
-                # Clear any existing adapters to avoid conflicts
-                try:
-                    if hasattr(pipeline, "unload_lora_weights"):
-                        logger.info("Clearing existing LoRA adapters...")
-                        pipeline.unload_lora_weights()
-                    elif hasattr(pipeline, "peft_config") and pipeline.peft_config:
-                        logger.info("Clearing existing LoRA adapters (alternative)...")
-                        pipeline.peft_config = {}
-                        if hasattr(pipeline.unet, "peft_config"):
-                            pipeline.unet.peft_config = {}
-                except Exception as e:
-                    logger.warning(f"Could not clear existing adapters: {e}")
-
-                adapter_names = []
-                adapter_weights = []
-
-                for lora_cfg in active_loras:
-                    logger.info(f"Loading LoRA: {lora_cfg.name} from {lora_cfg.path}")
-                    load_kwargs = {
-                        "adapter_name": lora_cfg.adapter_name,
-                    }
-                    if lora_cfg.weight_name is not None:
-                        load_kwargs["weight_name"] = lora_cfg.weight_name
-                        logger.info(f"  Using weight file: {lora_cfg.weight_name}")
-
-                    pipeline.load_lora_weights(
-                        lora_cfg.path,
-                        **load_kwargs,
-                    )
-                    adapter_names.append(lora_cfg.adapter_name)
-                    adapter_weights.append(lora_cfg.weight)
-
-                # Set adapter weights for all LoRAs
-                pipeline.set_adapters(adapter_names, adapter_weights=adapter_weights)
-                logger.info(f"✓ Loaded {len(active_loras)} LoRA(s) via diffusers")
+            # Set adapter weights for all LoRAs
+            pipeline.set_adapters(adapter_names, adapter_weights=adapter_weights)
+            logger.info(f"✓ Loaded {len(active_loras)} LoRA(s) via diffusers")
 
             if has_lcm:
                 logger.info("LCM LoRA loaded - using fast sampling mode (4-6 steps)")
