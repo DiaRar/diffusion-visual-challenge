@@ -192,7 +192,7 @@ def _get_pipeline(
     pipeline = None
 
     if use_custom_vae:
-        vae_path = "../vae/xlVAEC_g952.safetensors"
+        vae_path = "../vae/g9_5++.safetensors"
         logger.info(f"Loading custom VAE from: {vae_path}")
 
         # 1. Force VAE to load in FP32
