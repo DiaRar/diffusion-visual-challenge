@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, cast
 import torch
 
 if TYPE_CHECKING:
-    from diffusers import DiffusionPipeline
+    from diffusers import StableDiffusionXLPipeline
 
 # Add project root to path for imports
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -35,7 +35,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Pipeline cache for performance
-_PIPELINE_CACHE: dict[str, "DiffusionPipeline"] = {}
+_PIPELINE_CACHE: dict[str, "StableDiffusionXLPipeline"] = {}
 
 
 def _get_git_hash() -> str:
@@ -151,7 +151,7 @@ def _export_run_metadata(
     return run_json_path
 
 
-def _get_pipeline(backbone: str) -> "DiffusionPipeline":
+def _get_pipeline(backbone: str) -> "StableDiffusionXLPipeline":
     """
     Get or create a cached diffusion pipeline for SDXL.
 
@@ -185,9 +185,9 @@ def _get_pipeline(backbone: str) -> "DiffusionPipeline":
     logger.info(f"✓ Constraint check passed: Using approved model {ALLOWED_MODEL}")
 
     # Load SDXL pipeline
-    from diffusers import DiffusionPipeline
+    from diffusers import StableDiffusionXLPipeline
 
-    pipeline = DiffusionPipeline.from_pretrained(
+    pipeline = StableDiffusionXLPipeline.from_pretrained(
         ALLOWED_MODEL,
         torch_dtype=torch.float16,
         variant="fp16",
@@ -220,7 +220,7 @@ def generate_single_image(
     prompt: str,
     backbone: str = "sdxl",
     profile_name: str = "smoke",
-    scheduler_mode: str = "euler",
+    scheduler_mode: str = "dpm",
     seed: int = 123,
     out_path: str = "outputs/test.png",
     num_steps: int | None = None,
@@ -235,9 +235,9 @@ def generate_single_image(
 
     Args:
         prompt: Text prompt for image generation
-        backbone: Model backbone ("sdxl" or "sd2")
+        backbone: Model backbone ("sdxl")
         profile_name: Profile name ("smoke", "768_long", "1024_hq", "768_lcm", "1024_lcm")
-        scheduler_mode: Scheduler to use ("euler", "dpm", "3m", "flow", "unipc")
+        scheduler_mode: Scheduler mode (always uses high-quality DPM++ 2M)
         seed: Random seed for reproducibility
         out_path: Output file path
         num_steps: Number of inference steps (overrides profile default)
@@ -277,7 +277,7 @@ def generate_single_image(
 
     # Load LoRAs from config
     from configs.loras import get_active_loras, lora_summary
-    from configs.scheduler_loader import apply_scheduler_to_pipeline
+    from configs.schedulers.high_scheduler import apply_best_hq_scheduler
 
     active_loras = get_active_loras(include_lcm=True)
 
@@ -286,7 +286,7 @@ def generate_single_image(
     # Check if LCM LoRA is loaded
     has_lcm = any(lora.type == "lcm" for lora in active_loras)
 
-    # Apply scheduler - use LCMScheduler if LCM LoRA is present
+    # Apply scheduler - use LCMScheduler if LCM LoRA is present, otherwise use HQ scheduler
     if has_lcm:
         logger.info("LCM LoRA detected - using LCMScheduler for fast sampling")
         try:
@@ -299,7 +299,9 @@ def generate_single_image(
             logger.error(f"Failed to apply LCMScheduler: {e}")
             raise RuntimeError(f"LCMScheduler initialization failed: {e}") from e
     else:
-        _ = apply_scheduler_to_pipeline(pipeline, scheduler_mode, actual_steps)
+        # Use the high-quality scheduler by default
+        pipeline = apply_best_hq_scheduler(pipeline, use_karras_sigmas=True)
+        logger.info(f"✓ Applied high-quality scheduler (mode: {scheduler_mode})")
 
     # Generate run ID and export metadata
     run_id = _generate_run_id(seed, prompt, profile_name)
@@ -440,7 +442,7 @@ def generate_single_image(
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Generate single image with stock SDXL/SD2 pipeline"
+        description="Generate single image with SDXL using high-quality scheduler"
     )
     _ = parser.add_argument(
         "--prompt",
@@ -464,9 +466,9 @@ def parse_args() -> argparse.Namespace:
     _ = parser.add_argument(
         "--scheduler",
         type=str,
-        default="euler",
-        choices=["euler", "dpm", "3m", "flow", "unipc"],
-        help="Scheduler to use (default: euler)",
+        default="dpm",
+        choices=["dpm"],
+        help="Scheduler to use (default: dpm - high-quality DPM++ 2M)",
     )
     _ = parser.add_argument(
         "--out",

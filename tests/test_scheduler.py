@@ -1,161 +1,175 @@
-"""Tests for configs/scheduler_loader.py"""
+"""Tests for the simplified scheduler system"""
 
 import pytest
 
-from configs.scheduler_loader import (
-    SCHEDULER_CONFIGS,
-    apply_scheduler_to_pipeline,
-    get_scheduler_info,
-    list_available_schedulers,
-)
+
+class TestBestHQScheduler:
+    """Test the high-quality scheduler class"""
+
+    def test_scheduler_class_exists(self):
+        """The SDXLAnime_BestHQScheduler class should exist and be importable"""
+        from configs.schedulers.high_scheduler import SDXLAnime_BestHQScheduler
+        from diffusers.schedulers.scheduling_dpmsolver_multistep import (
+            DPMSolverMultistepScheduler,
+        )
+
+        # Should be a subclass of DPMSolverMultistepScheduler
+        assert issubclass(SDXLAnime_BestHQScheduler, DPMSolverMultistepScheduler)
+
+    def test_scheduler_has_hooks(self):
+        """The scheduler should have hook methods"""
+        from configs.schedulers.high_scheduler import SDXLAnime_BestHQScheduler
+        import torch
+
+        scheduler = SDXLAnime_BestHQScheduler.from_config(
+            {"algorithm_type": "dpmsolver++", "solver_order": 1}
+        )
+
+        # Should have hook methods
+        assert hasattr(scheduler, "hook_before_step")
+        assert hasattr(scheduler, "hook_after_step")
+
+        # Hooks should return the input unchanged
+        model_output = torch.randn(1, 4, 8, 8)
+        timestep = 10
+        sample = torch.randn(1, 4, 8, 8)
+
+        result = scheduler.hook_before_step(model_output, timestep, sample)
+        assert torch.equal(result, model_output)
+
+        result = scheduler.hook_after_step(sample, timestep, sample)
+        assert torch.equal(result, sample)
 
 
-class TestSchedulerConfigs:
-    """Test scheduler configurations"""
+class TestApplyBestHQScheduler:
+    """Test the apply_best_hq_scheduler function"""
 
-    def test_all_schedulers_defined(self):
-        """All expected schedulers should be defined"""
-        assert "euler" in SCHEDULER_CONFIGS
-        assert "dpm" in SCHEDULER_CONFIGS
-        assert "unipc" in SCHEDULER_CONFIGS
+    def test_function_exists(self):
+        """The apply_best_hq_scheduler function should exist"""
+        from configs.schedulers.high_scheduler import apply_best_hq_scheduler
+        assert callable(apply_best_hq_scheduler)
 
-    def test_euler_config(self):
-        """Euler scheduler config should have required fields"""
-        config = SCHEDULER_CONFIGS["euler"]
-        assert "class" in config
-        assert config["class"] == "EulerDiscreteScheduler"
-        assert "description" in config
-        assert "use_case" in config
+    def test_apply_scheduler_modifies_pipeline(self, mock_pipeline):
+        """Applying scheduler should modify the pipeline's scheduler"""
+        from configs.schedulers.high_scheduler import (
+            apply_best_hq_scheduler,
+            SDXLAnime_BestHQScheduler,
+        )
 
-    def test_dpm_config(self):
-        """DPM scheduler config should have required fields"""
-        config = SCHEDULER_CONFIGS["dpm"]
-        assert "class" in config
-        assert config["class"] == "HighQualityDPMScheduler"
-        assert "description" in config
-        assert "use_case" in config
+        original_scheduler = mock_pipeline.scheduler
+        result = apply_best_hq_scheduler(mock_pipeline, use_karras_sigmas=True)
 
-    def test_unipc_config(self):
-        """UniPC scheduler config should have required fields"""
-        config = SCHEDULER_CONFIGS["unipc"]
-        assert "class" in config
-        assert config["class"] == "UniPCMultistepScheduler"
-        assert "description" in config
-        assert "use_case" in config
-
-
-class TestGetSchedulerInfo:
-    """Test get_scheduler_info function"""
-
-    def test_get_valid_scheduler(self):
-        """Should return config for valid scheduler name"""
-        info = get_scheduler_info("euler")
-        assert info is not None
-        assert info["class"] == "EulerDiscreteScheduler"
-
-    def test_get_invalid_scheduler(self):
-        """Should return None for invalid scheduler name"""
-        info = get_scheduler_info("nonexistent")
-        assert info is None
-
-    def test_case_insensitive(self):
-        """Should work with different case"""
-        info_lower = get_scheduler_info("euler")
-        info_upper = get_scheduler_info("EULER")
-        info_mixed = get_scheduler_info("EuLeR")
-
-        assert info_lower is not None
-        assert info_upper is not None
-        assert info_mixed is not None
-        assert info_lower == info_upper == info_mixed
-
-
-class TestApplySchedulerToPipeline:
-    """Test apply_scheduler_to_pipeline function"""
-
-    def test_apply_valid_scheduler(self, mock_pipeline):
-        """Should apply valid scheduler to pipeline"""
-        result, _ = apply_scheduler_to_pipeline(mock_pipeline, "euler", 20)
+        # Should return the same pipeline
         assert result is mock_pipeline
-        # The function attempts to apply scheduler and logs warnings if it fails
-        # but always returns the pipeline
 
-    def test_apply_invalid_scheduler(self, mock_pipeline):
-        """Should raise ValueError for invalid scheduler"""
-        with pytest.raises(ValueError, match="Unknown scheduler"):
-            apply_scheduler_to_pipeline(mock_pipeline, "nonexistent", 20)
+        # Scheduler should be changed to our custom scheduler
+        assert mock_pipeline.scheduler is not original_scheduler
+        assert isinstance(mock_pipeline.scheduler, SDXLAnime_BestHQScheduler)
 
-    def test_apply_scheduler_returns_pipeline(self, mock_pipeline):
-        """Should always return the pipeline object"""
-        original_pipeline = mock_pipeline
-        result, _ = apply_scheduler_to_pipeline(mock_pipeline, "euler", 20)
+    def test_use_karras_sigmas_option(self, mock_pipeline):
+        """The use_karras_sigmas parameter should be respected"""
+        from configs.schedulers.high_scheduler import apply_best_hq_scheduler
 
-        assert result is original_pipeline  # Same pipeline instance is returned
+        # Apply with karras sigmas
+        apply_best_hq_scheduler(mock_pipeline, use_karras_sigmas=True)
+        assert mock_pipeline.scheduler.config.use_karras_sigmas is True
 
+        # Reset and apply without
+        from diffusers import StableDiffusionXLPipeline
+        mock_pipeline.scheduler = StableDiffusionXLPipeline.from_pretrained(
+            "stabilityai/stable-diffusion-xl-base-1.0",
+            torch_dtype="float16",
+        ).scheduler
 
-class TestListAvailableSchedulers:
-    """Test list_available_schedulers function"""
+        apply_best_hq_scheduler(mock_pipeline, use_karras_sigmas=False)
+        assert mock_pipeline.scheduler.config.use_karras_sigmas is False
 
-    def test_returns_all_configs(self):
-        """Should return copy of all scheduler configs"""
-        schedulers = list_available_schedulers()
+    def test_use_lu_lambdas_option(self, mock_pipeline):
+        """The use_lu_lambdas parameter should be respected"""
+        from configs.schedulers.high_scheduler import apply_best_hq_scheduler
 
-        assert isinstance(schedulers, dict)
-        assert len(schedulers) == len(SCHEDULER_CONFIGS)
-        assert "euler" in schedulers
-        assert "dmp" in schedulers or "dpm" in schedulers
-        assert "unipc" in schedulers
-
-    def test_returns_copy(self):
-        """Should return a copy, not the original"""
-        schedulers1 = list_available_schedulers()
-        schedulers2 = list_available_schedulers()
-
-        # Modifications shouldn't affect the original
-        assert schedulers1 is not schedulers2
-
-
-class TestSchedulerIntegration:
-    """Integration tests for scheduler system"""
-
-    def test_all_schedulers_have_valid_classes(self):
-        """All scheduler classes should be importable"""
-        from diffusers.schedulers.scheduling_euler_discrete import (
-            EulerDiscreteScheduler,
-        )
-        from diffusers.schedulers.scheduling_dpmsolver_multistep import (
-            DPMSolverMultistepScheduler,
-        )
-        from diffusers.schedulers.scheduling_unipc_multistep import (
-            UniPCMultistepScheduler,
-        )
-
-        # Verify classes exist and are importable
-        assert EulerDiscreteScheduler is not None
-        assert DPMSolverMultistepScheduler is not None
-        assert UniPCMultistepScheduler is not None
-
-    def test_scheduler_classes_match_configs(self):
-        """Scheduler classes in configs should match actual classes"""
-        from diffusers.schedulers.scheduling_euler_discrete import (
-            EulerDiscreteScheduler,
-        )
-        from diffusers.schedulers.scheduling_dpmsolver_multistep import (
-            DPMSolverMultistepScheduler,
-        )
-        from diffusers.schedulers.scheduling_unipc_multistep import (
-            UniPCMultistepScheduler,
-        )
-        from configs.my_scheduler import HighQualityDPMScheduler
-
-        class_map = {
-            "EulerDiscreteScheduler": EulerDiscreteScheduler,
-            "DPMSolverMultistepScheduler": DPMSolverMultistepScheduler,
-            "HighQualityDPMScheduler": HighQualityDPMScheduler,
-            "UniPCMultistepScheduler": UniPCMultistepScheduler,
+        # Reset scheduler config
+        mock_pipeline.scheduler.config = {
+            "algorithm_type": "dpmsolver++",
+            "solver_order": 1,
+            "solver_type": "midpoint",
+            "prediction_type": "epsilon",
+            "use_karras_sigmas": False,
+            "use_lu_lambdas": False,
         }
 
-        for scheduler_name, config in SCHEDULER_CONFIGS.items():
-            class_name = config["class"]
-            assert class_name in class_map
-            assert class_map[class_name] is not None
+        # Explicitly set karras to False since it defaults to True
+        apply_best_hq_scheduler(mock_pipeline, use_lu_lambdas=True, use_karras_sigmas=False)
+        assert mock_pipeline.scheduler.config.use_lu_lambdas is True
+
+        # Reset and apply without
+        from diffusers import StableDiffusionXLPipeline
+        mock_pipeline.scheduler = StableDiffusionXLPipeline.from_pretrained(
+            "stabilityai/stable-diffusion-xl-base-1.0",
+            torch_dtype="float16",
+        ).scheduler
+
+        apply_best_hq_scheduler(mock_pipeline, use_lu_lambdas=False, use_karras_sigmas=True)
+        assert mock_pipeline.scheduler.config.use_lu_lambdas is False
+
+    def test_mutual_exclusivity(self, mock_pipeline):
+        """use_karras_sigmas and use_lu_lambdas should be mutually exclusive"""
+        from configs.schedulers.high_scheduler import apply_best_hq_scheduler
+
+        with pytest.raises(ValueError, match="Choose only one"):
+            apply_best_hq_scheduler(
+                mock_pipeline, use_karras_sigmas=True, use_lu_lambdas=True
+            )
+
+
+class TestFilteredInitKwargs:
+    """Test the _filtered_init_kwargs_for_dpmsolver helper function"""
+
+    def test_function_exists(self):
+        """The _filtered_init_kwargs_for_dpmsolver function should exist"""
+        from configs.schedulers.high_scheduler import (
+            _filtered_init_kwargs_for_dpmsolver,
+        )
+        assert callable(_filtered_init_kwargs_for_dpmsolver)
+
+    def test_filters_kwargs_correctly(self):
+        """Should filter out invalid kwargs for DPMSolverMultistepScheduler"""
+        from configs.schedulers.high_scheduler import (
+            _filtered_init_kwargs_for_dpmsolver,
+        )
+
+        # Create a config with valid and invalid kwargs
+        config = {
+            "algorithm_type": "dpmsolver++",
+            "solver_order": 1,
+            "invalid_param": "should_be_removed",
+            "another_invalid": 123,
+        }
+
+        filtered = _filtered_init_kwargs_for_dpmsolver(config)
+
+        # Should only contain valid params
+        assert "algorithm_type" in filtered
+        assert "solver_order" in filtered
+        assert "invalid_param" not in filtered
+        assert "another_invalid" not in filtered
+
+    def test_preserves_valid_kwargs(self):
+        """Should preserve all valid kwargs"""
+        from configs.schedulers.high_scheduler import (
+            _filtered_init_kwargs_for_dpmsolver,
+        )
+
+        # Valid config
+        config = {
+            "algorithm_type": "dpmsolver++",
+            "solver_order": 1,
+            "solver_type": "midpoint",
+            "prediction_type": "epsilon",
+        }
+
+        filtered = _filtered_init_kwargs_for_dpmsolver(config)
+
+        for key in config:
+            assert key in filtered
+            assert filtered[key] == config[key]

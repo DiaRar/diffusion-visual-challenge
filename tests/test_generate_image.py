@@ -299,7 +299,7 @@ class TestInputValidation:
     @patch("infer.generate_image._get_pipeline")
     def test_invalid_backbone_raises_error(self, mock_get_pipeline):
         """Invalid backbone should raise ValueError"""
-        with pytest.raises(ValueError, match="Backbone must be 'sdxl' or 'sd2'"):
+        with pytest.raises(ValueError, match="Backbone must be 'sdxl'"):
             generate_single_image(
                 prompt="test prompt",
                 backbone="invalid",
@@ -342,20 +342,24 @@ class TestProfileSystem:
 
 
 class TestSchedulerSystem:
-    """Test scheduler configuration integration"""
+    """Test the simplified scheduler system"""
 
-    def test_get_scheduler_info_valid(self):
-        """Should return info for valid scheduler"""
-        from configs.scheduler_loader import get_scheduler_info
+    def test_best_hq_scheduler_available(self):
+        """The high-quality scheduler should be available"""
+        from configs.schedulers.high_scheduler import (
+            apply_best_hq_scheduler,
+            SDXLAnime_BestHQScheduler,
+        )
 
-        info = get_scheduler_info("euler")
-        assert info is not None
-        assert "class" in info
-        assert info["class"] == "EulerDiscreteScheduler"
+        # Should be able to import the scheduler
+        assert SDXLAnime_BestHQScheduler is not None
+        assert apply_best_hq_scheduler is not None
 
-    def test_get_scheduler_info_invalid(self):
-        """Should return None for invalid scheduler"""
-        from configs.scheduler_loader import get_scheduler_info
+    def test_scheduler_uses_karras_by_default(self, mock_pipeline):
+        """Scheduler should use Karras sigmas by default"""
+        from configs.schedulers.high_scheduler import apply_best_hq_scheduler
 
-        info = get_scheduler_info("invalid_scheduler")
-        assert info is None
+        apply_best_hq_scheduler(mock_pipeline)
+
+        # Should have karras sigmas enabled
+        assert mock_pipeline.scheduler.config.use_karras_sigmas is True
