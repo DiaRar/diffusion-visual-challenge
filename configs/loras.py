@@ -54,10 +54,24 @@ STYLE_LORAS: list[LoRAConfig] = [
     ),
     # Note: Additional style LoRA needed - disabled for now
     # LoRAConfig(
-    #     name="Anime Flat Color XL",
-    #     path="<verify-correct-hf-path>",
-    #     weight=0.25,
-    #     adapter_name="flat_color",
+    #     name="Ani40 Stabilizer",
+    #     path="/root/lora/ani40_stabilizer_v0.1.safetensors",
+    #     weight=0.4,
+    #     adapter_name="ani_stabilizer",
+    #     type="style",
+    # ),
+    # LoRAConfig(
+    #     name="Add Detail",
+    #     path="/root/lora/add_detail_xl.safetensors",
+    #     weight=0.5,
+    #     adapter_name="add_detail",
+    #     type="style",
+    # ),
+    # LoRAConfig(
+    #     name="Noob",
+    #     path="/root/lora/noob.safetensors",
+    #     weight=0.6,
+    #     adapter_name="noob",
     #     type="style",
     # ),
 ]

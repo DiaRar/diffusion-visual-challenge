@@ -328,25 +328,23 @@ def generate_single_image(
     generator = torch.Generator(device="cuda").manual_seed(seed)
 
     # Load all configured LoRAs
+    # Load all configured LoRAs
     if active_loras:
         logger.info(lora_summary(active_loras))
         try:
-            # Clear existing adapters
+            # Clear existing LoRAs using Diffusers only
             try:
                 if hasattr(pipeline, "unload_lora_weights"):
                     pipeline.unload_lora_weights()
-                elif hasattr(pipeline, "peft_config") and pipeline.peft_config:
-                    pipeline.peft_config = {}
-                    if hasattr(pipeline.unet, "peft_config"):
-                        pipeline.unet.peft_config = {}
             except Exception as e:
-                logger.warning(f"Could not clear existing adapters: {e}")
+                logger.warning(f"Could not unload previous LoRA weights: {e}")
 
             adapter_names = []
             adapter_weights = []
 
             for lora_cfg in active_loras:
                 logger.info(f"Loading LoRA: {lora_cfg.name}")
+
                 load_kwargs = {"adapter_name": lora_cfg.adapter_name}
                 if lora_cfg.weight_name is not None:
                     load_kwargs["weight_name"] = lora_cfg.weight_name

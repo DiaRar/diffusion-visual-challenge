@@ -104,7 +104,7 @@ def apply_best_hq_scheduler(
     cfg.update(
         dict(
             algorithm_type="dpmsolver++",
-            solver_order=2,
+            solver_order=3,
             solver_type="midpoint",
             lower_order_final=False,
             euler_at_final=True,
