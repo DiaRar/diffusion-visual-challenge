@@ -1,74 +1,98 @@
-import numpy as np
+# diffusers==0.35.2
+from __future__ import annotations
+
+from typing import Optional, Union
+
+import torch
 from diffusers import DPMSolverMultistepScheduler
 
 
-class HighQualityDPMScheduler(DPMSolverMultistepScheduler):
+class SDXLAnime_BestHQScheduler(DPMSolverMultistepScheduler):
     """
-    High-Quality DPM++ 2M scheduler optimized for SDXL Anime.
+    Best-quality SDXL-base scheduler (still images), diffusers==0.35.2.
 
-    Provides:
-    - Better high-frequency detail reproduction
-    - Stable color gradients (no chroma blowout)
-    - Cleaner final step (no mush / over-denoise)
-    - Safe timestep spacing for SDXL latents
-    - Gentle anime micro-contrast boost
-
-    Best for:
-    - General anime generation (20-30 steps)
-    - Balanced quality/speed
-    - Stable, reproducible results
+    Philosophy:
+      - NO custom sigma warping (that's what was scuffing quality)
+      - Use stable, high-quality DPM++ 2M configuration
+      - SDXL-specific stabilization knobs available (lu_lambdas / karras)
+      - Future-proof hooks for video experiments without touching solver math
     """
 
-    def __init__(self, *args, **kwargs):
-        # ================================================================
-        # 1. Solver Settings (DPM++ 2M - balanced quality/speed)
-        # ================================================================
-        kwargs["algorithm_type"] = "dpmsolver++"
-        kwargs["solver_order"] = 2  # DPM++ 2M
-        kwargs["lower_order_final"] = True  # Stable final transition
+    def __init__(
+        self,
+        *args,
+        # Recommended for SDXL stability/quality when using DPM++ (esp. <50 steps),
+        # also fine at 60-100 steps as a strong default.
+        use_lu_lambdas: bool = True,
+        # Optional alternative; keep False by default if you want the most "vanilla SDXL" behavior.
+        use_karras_sigmas: bool = False,
+        # For images, ODE DPM++ is typically the crispest.
+        algorithm_type: str = "dpmsolver++",
+        **kwargs,
+    ):
+        # Remove diffusers private config keys if passed via from_config
+        kwargs.pop("_class_name", None)
+        kwargs.pop("_diffusers_version", None)
 
-        # ================================================================
-        # 2. Sigma Schedule (Karras noise schedule)
-        # ================================================================
-        kwargs["use_karras_sigmas"] = True  # Industry-standard Karras sigmas
+        kwargs.setdefault(
+            "algorithm_type", algorithm_type
+        )  # "dpmsolver++" or "sde-dpmsolver++"
+        kwargs.setdefault("solver_order", 2)  # best for CFG / guided sampling
+        kwargs.setdefault("solver_type", "midpoint")  # stable + sharp
+        kwargs.setdefault("lower_order_final", True)
+        kwargs.setdefault("euler_at_final", False)
+        kwargs.setdefault(
+            "final_sigmas_type", "zero"
+        )  # fully denoise (don’t stop early)
+        kwargs.setdefault("final_sigmas_type", "zero")        # fully denoise (don’t stop early)
+        kwargs.setdefault("timestep_spacing", "linspace")
 
-        # ================================================================
-        # 3. Timestep Spacing
-        # ================================================================
-        # Trailing = exponential spacing, preserves early detail better
-        kwargs["timestep_spacing"] = "trailing"
-
-        # ================================================================
-        # 4. Final Sigma Handling
-        # ================================================================
-        kwargs["final_sigmas_type"] = "sigma_min"  # No color burning
-        kwargs["thresholding"] = False  # Avoid SDXL artifacting
-
-        # ================================================================
-        # 5. Anime Detail Boost (Optional)
-        # ================================================================
-        # Slight gamma curve for micro-contrast enhancement
-        anime_gamma = kwargs.pop("anime_gamma", 1.02)
-        self.anime_gamma = anime_gamma
+        # SDXL stabilization schedule choice (only one should be True)
+        kwargs.setdefault("use_lu_lambdas", bool(use_lu_lambdas))
+        kwargs.setdefault("use_karras_sigmas", bool(use_karras_sigmas))
 
         super().__init__(*args, **kwargs)
 
-    # --------------------------------------------------------------------
-    # Apply small anime gamma to the sigma curve (helps fine detail)
-    # --------------------------------------------------------------------
-    def set_timesteps(self, num_inference_steps, device=None, **kwargs):
-        super().set_timesteps(num_inference_steps, device=device, **kwargs)
+    # ---- future-proof hooks (no-op now) ----
+    # Later for video: you can override these to inject temporal conditioning,
+    # per-step CFG schedules, cached features, etc., without modifying solver updates.
+    def hook_before_step(
+        self,
+        model_output: torch.Tensor,
+        timestep: Union[int, torch.Tensor],
+        sample: torch.Tensor,
+    ) -> torch.Tensor:
+        return model_output
 
-        # Apply detail-preserving gamma, only if num steps >= 12
-        if num_inference_steps >= 12:
-            sigmas = self.sigmas.cpu().float().numpy()
-            sigmas = sigmas**self.anime_gamma
+    def hook_after_step(
+        self,
+        prev_sample: torch.Tensor,
+        timestep: Union[int, torch.Tensor],
+        sample: torch.Tensor,
+    ) -> torch.Tensor:
+        return prev_sample
 
-            # Re-normalize to the same range
-            sigmas = np.interp(
-                sigmas,
-                (sigmas.min(), sigmas.max()),
-                (self.sigmas.min().cpu(), self.sigmas.max().cpu()),
-            )
-
-            self.sigmas = type(self.sigmas)(sigmas).to(device)
+    def step(
+        self,
+        model_output: torch.Tensor,
+        timestep: Union[int, torch.Tensor],
+        sample: torch.Tensor,
+        generator: Optional[torch.Generator] = None,
+        variance_noise: Optional[torch.Tensor] = None,
+        return_dict: bool = True,
+    ):
+        model_output = self.hook_before_step(model_output, timestep, sample)
+        out = super().step(
+            model_output=model_output,
+            timestep=timestep,
+            sample=sample,
+            generator=generator,
+            variance_noise=variance_noise,
+            return_dict=return_dict,
+        )
+        if return_dict:
+            out.prev_sample = self.hook_after_step(out.prev_sample, timestep, sample)
+            return out
+        prev_sample = out[0]
+        prev_sample = self.hook_after_step(prev_sample, timestep, sample)
+        return (prev_sample,)

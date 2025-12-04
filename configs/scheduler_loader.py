@@ -33,7 +33,7 @@ SCHEDULER_CONFIGS: dict[str, dict[str, str]] = {
         "use_case": "General-purpose image generation",
     },
     "dpm": {
-        "class": "HighQualityDPMScheduler",
+        "class": "SDXLAnime_BestHQScheduler",
         "description": "High-quality sampling with optimized settings",
         "use_case": "Final renders",
     },
@@ -91,7 +91,7 @@ def apply_scheduler_to_pipeline(
         )
 
         # Import your custom schedulers
-        from configs.schedulers.high_scheduler import HighQualityDPMScheduler
+        from configs.schedulers.high_scheduler import SDXLAnime_BestHQScheduler
         from configs.schedulers.sota_flow_scheduler import SDXLAnime_UltimateDPM3MFlow
         from configs.schedulers.sota_scheduler import SDXLAnimeDPM3M_SDE
 
@@ -99,7 +99,7 @@ def apply_scheduler_to_pipeline(
         scheduler_map: dict[str, type] = {
             "EulerDiscreteScheduler": EulerDiscreteScheduler,
             "DPMSolverMultistepScheduler": DPMSolverMultistepScheduler,
-            "HighQualityDPMScheduler": HighQualityDPMScheduler,
+            "SDXLAnime_BestHQScheduler": SDXLAnime_BestHQScheduler,
             "SDXLAnimeDPM3M_SDE": SDXLAnimeDPM3M_SDE,
             "SDXLAnime_UltimateDPM3MFlow": SDXLAnime_UltimateDPM3MFlow,
             "UniPCMultistepScheduler": UniPCMultistepScheduler,
@@ -122,12 +122,13 @@ def apply_scheduler_to_pipeline(
         #   - Overwrite the class name in config
         #   - Pass dict to scheduler_class.from_config()
         # ------------------------------------------------------------------
-        raw_cfg = pipeline.scheduler.config
-        cfg = copy.deepcopy(raw_cfg)
-        cfg["_class_name"] = scheduler_class.__name__
 
         # Instantiate safely
-        scheduler = scheduler_class.from_config(cfg)
+        scheduler = scheduler_class.from_config(
+            pipeline.scheduler.config,
+            use_lu_lambdas=True,
+            use_karras_sigmas=False,
+        )
 
         # Debug print
         logger.info(
