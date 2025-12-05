@@ -12,6 +12,9 @@ python infer/generate_image.py --prompt "anime girl with blue hair, beautiful de
 python infer/generate_image.py --prompt "anime girl with blue hair, beautiful detailed eyes, cel shading, clean lines, masterpiece" --seed 123 --profile 1024_hq --scheduler dpm --negative-prompt "blurry, low quality, bad anatomy" --out outputs/test_without_lcm.png
 ```
 
+### Hot Chick Settings (Kinda realistic-blend)
+python infer/generate_image.py --seed 123 --profile 1024_hq --scheduler dpm --negative-prompt "blurry, low quality, bad anatomy" --steps 20 --use-custom-vae --out outputs/test_g10.png --prompt "anime girl with blue hair, beautiful detailed eyes, cel shading, clean lines, masterpiece, cinematic volumetric god-rays, subsurface glow diffusion, balanced color harmony, 8k quality, perfect composition, beautiful godess"
+
 ## Verify LoRA is Active
 
 Look for this in the output:

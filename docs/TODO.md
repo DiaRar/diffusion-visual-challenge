@@ -49,14 +49,14 @@ This TODO tracks the implemented pipeline and remaining work under contest rules
 
 ### Internal Conditioning Map Generator (legal)
 
-* [ ] Add `generate_keyframe(prompt, seed)` helper
-* [ ] Add `extract_control_maps(frame)`:
+* [x] Add `generate_keyframe(prompt, seed)` helper ✓
+* [x] Add `extract_control_maps(frame)`:
 
-  * pose_map = openpose(frame)
-  * depth_map = depth_estimator(frame)
-  * edge_map = canny/lineart(frame)
-* [ ] Ensure **NO external image paths** accepted
-* [ ] Enforce `--internal_controlnet_only` (reject external files)
+  * pose_map = openpose(frame) ✓
+  * depth_map = depth_estimator(frame) ✓
+  * edge_map = canny/lineart(frame) ✓
+* [x] Ensure **NO external image paths** accepted ✓ (enforced in generate_image.py)
+* [x] Enforce `--internal_controlnet_only` (reject external files) ✓
 
 ### Sparse / Keyframe Conditioning
 
@@ -66,9 +66,9 @@ This TODO tracks the implemented pipeline and remaining work under contest rules
 
 ### Shape Validation
 
-* [ ] Auto-resize control maps → SDXL resolution
-* [ ] Auto-resize → latent space (128×128)
-* [ ] Pre-inference validation errors for mismatched shapes
+* [x] Auto-resize control maps → SDXL resolution ✓
+* [x] Auto-resize → latent space (128×128) ✓ (helper function ready)
+* [x] Pre-inference validation errors for mismatched shapes ✓
 
 ---
 
