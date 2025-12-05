@@ -1,8 +1,8 @@
-# TODO.md — Week Plan for 3‑Person Team (Contest‑Compliant, SOTA)
+# TODO.md — Week Plan for 3‑Person Team (Contest‑Compliant, Current Impl)
 
-This TODO reflects everything allowed under contest rules:
+This TODO tracks the implemented pipeline and remaining work under contest rules:
 
-* **SDXL base only**
+* **SDXL base only** (SD2 allowed by rules but not wired)
 * LoRAs, ControlNets, AnimateDiff, Motion LoRAs allowed
 * **All ControlNet maps must be internally generated**
 * No external pose/depth/edge sources
@@ -17,31 +17,23 @@ This TODO reflects everything allowed under contest rules:
 
 ---
 
-# Day 1 — Base Pipeline + LoRA Integration (P3) — ✅ COMPLETE
+# Day 1 — Base Pipeline + LoRA Integration (P3) — ✅ COMPLETE (updated)
 
-* [x] Load SDXL 1.0 base in fp16/bf16
-* [x] Integrate **sdxl-vae-fp16-fix**
+* [x] Load SDXL 1.0 base (fp16 pipeline, fp32 VAE decode)
 * [x] Implement LoRA loader from configuration
-* [x] Add primary LoRAs:
+* [x] Active style LoRAs: Pastel Anime XL (0.8), Ani40 Stabilizer (0.4), Noob (0.2)
+* [x] Character / motion LoRA slots present (none loaded)
+* [x] LCM LoRA loader scaffolded but **disabled by default** pending quality
+* [x] Deterministic seed handler
+* [x] **Scheduler architecture:** DPM++ 2M HQ (`SDXLAnime_BestHQScheduler`), LCM path auto-switches only if LCM LoRA enabled
+* [x] Manual FP32 VAE decode to remove green tint
+* [x] Custom VAE option (`../vae/g10.safetensors`, fp32) + default VAE path
 
-  * Pastel Anime XL (0.7–0.85) ✓ ACTIVE (weight 0.8)
-  * Anime Flat Color XL (0.15–0.3) ⚠️ DISABLED (path needs verification)
-* [x] Add optional character LoRA support (empty, ready to configure)
-* [x] Add LCM LoRA loader (4–6 steps, CFG 1.5–2) ✓ ACTIVE
-* [x] Add configuration-based LoRA loading (configs/loras.py)
-* [x] Add deterministic seed handler
-* [x] Implement **single-scheduler architecture**:
-  * DPM++ 2M with Karras sigmas (high-quality mode)
-  * LCMScheduler (fast mode with LCM LoRA)
-* [x] Validate single-frame output quality ✓ TESTED
-
-**Testing Results:**
-- 67 unit tests passing
-- Integration tests generating images successfully
-- LCM fast sampling working (4-6 steps, LCMScheduler)
-- High-quality mode working (26 steps, DPM++ 2M)
-- torch.compile integration working (+10-15% speedup)
-- Performance: smoke (3s), 768_lcm (5s), 768_long (8s)
+**Current profiles / perf targets (re-benchmark needed):**
+- smoke: 128², 4 steps, CFG 6.0
+- 768_long: 22 steps, CFG 6.0
+- 1024_hq: 90 steps, CFG 6.5
+- 768/1024 LCM: 5–6 steps, CFG 1.7 (LCM currently off)
 
 ---
 
@@ -80,7 +72,7 @@ This TODO reflects everything allowed under contest rules:
 
 ---
 
-# Day 3 — AnimateDiff Integration (P1)
+# Day 3 — AnimateDiff Integration (P1) — not started
 
 * [ ] Integrate SDXL AnimateDiff Motion Module (v1.5)
 * [ ] Add CLI flags:
@@ -98,9 +90,9 @@ This TODO reflects everything allowed under contest rules:
 
 # Day 4 — Performance Optimization (P3)
 
-* [ ] Enable `torch.compile(unet, mode="max-autotune")`
-* [ ] Enforce SDPA / Flash Attention
-* [ ] Use fp16 / bf16 end-to-end
+* [ ] Benchmark current profiles (include manual FP32 decode cost)
+* [ ] Evaluate `--torch-compile` (`reduce-overhead` already wired; test gains)
+* [ ] Enforce SDPA / Flash Attention validation
 * [ ] Add UNet tiling support (optional)
 * [ ] Benchmark speeds:
 

@@ -1,9 +1,9 @@
-# FINAL.md — SOTA SDXL Anime Video Pipeline (Contest-Compliant)
+# FINAL.md — SOTA SDXL Anime Video Pipeline (Contest-Compliant, Current Impl)
 
-This document is the **single source of truth** for your entire anime video generation system under the **CS492C Visual Generation Contest constraints**.
+This document is the **single source of truth** for the current **implemented** anime pipeline under the **CS492C Visual Generation Contest constraints**.
 
 > **CRITICAL RULE UPDATE (Slack Clarifications):**
-> *   **SDXL 1.0** is the primary backbone. **SD 2 (Stable Diffusion 2)** is allowed as a lightweight alternative.
+> *   **SDXL 1.0** is the enforced backbone in code (SD2 is allowed by rules but not wired in this repo).
 > *   **No External Visual Input at Inference**: You cannot use existing images, sketches, or manually drawn pose maps as input to ControlNet/img2img.
 > *   **Internal Generation Allowed**: If your model generates a conditioning signal (e.g., text-to-image -> pose extraction), you CAN use that signal to guide further generation.
 > *   **AnimateDiff Allowed**: Explicitly permitted as an "additional neural network for guidance".
@@ -12,18 +12,18 @@ This document is the **single source of truth** for your entire anime video gene
 
 ---
 
-# 1. System Goals
+# 1. System Goals (as implemented)
 
 ### **Primary Goal**
 
-*   Produce **high‑quality anime images** (768×768 or 1024×1024)
-*   SDXL (or SD2) + Anime LoRAs + LCM (4–6 steps)
+*   Produce **high‑quality anime images** at 768×768 (default) and 1024×1024 (HQ).
+*   SDXL + Anime LoRAs; LCM is **available but disabled by default** until quality is vetted.
 
 ### **Secondary Goal (Stretch)**
 
 *   Produce **8–10 second 768p anime videos**
-*   SDXL/SD2 + AnimateDiff Motion Module
-*   **Self-generated** ControlNet guidance (no external images)
+*   SDXL + AnimateDiff Motion Module (to be integrated)
+*   **Self-generated** ControlNet guidance (no external images) — loader not yet wired
 *   Minimal flicker, consistent identity, stable backgrounds
 
 ---
@@ -32,27 +32,32 @@ This document is the **single source of truth** for your entire anime video gene
 
 ## 2.1 Base Model (Required)
 
-*   **Stable Diffusion XL Base 1.0** OR **Stable Diffusion 2**
-*   Use: `torch.float16` or `bfloat16`
-*   VAE: `sdxl-vae-fp16-fix` (for SDXL) or standard SD2 VAE
+*   **Stable Diffusion XL Base 1.0** (only; SD2 not yet supported in code)
+*   Precision: pipeline runs in `torch.float16`; VAE kept in **float32** for decoding
+*   VAE options:
+    * Default SDXL VAE (fp16 weights, decoded in fp32)
+    * Optional custom VAE `../vae/g10.safetensors` (loaded fp32, scaling 0.13025)
+*   **No refiner models permitted** (blocked at CLI)
 
 ## 2.2 LoRAs (Anime Style)
 
-### Required LoRAs
-1.  **Pastel Anime XL** — Main style backbone (weight 0.7–0.85)
-2.  **Anime Flat Color XL** — Flat-color, stable-cel look (weight 0.15–0.3)
+### Active Style LoRAs (configs/loras.py)
+1.  **Pastel Anime XL** — 0.8 (adapter `pastel_anime`)
+2.  **Ani40 Stabilizer** — 0.4 (adapter `ani_stabilizer`)
+3.  **Noob** — 0.2 (adapter `noob`)
 
-### Optional LoRAs
-*   **Character LoRA** — if identity stability needed (weight 0.6–0.8)
-*   **Aesthetic Anime LoRA** — small polish (weight 0.1–0.2 max)
+### Optional (configured but empty/disabled)
+*   Character LoRA slot — none loaded
+*   Motion LoRAs — none loaded
+*   LCM LoRA — **configured but disabled** (`LCM_LORA = None`)
 
-> Use **max 3 LoRAs** simultaneously to avoid interference.
+> Rule: keep **≤3 concurrent LoRAs** for stability (currently at 3 style adapters).
 
 ---
 
 # 3. ControlNets (Strict Compliance)
 
-## ControlNet modules included:
+## Planned ControlNet modules:
 *   **OpenPose** (pose stability, motion structure)
 *   **Depth** (background + perspective stability)
 *   **LineArt / Canny** (outline stabilization)
@@ -78,7 +83,7 @@ This document is the **single source of truth** for your entire anime video gene
 ### Required
 *   **AnimateDiff Motion Module** (SDXL or SD2 version)
 
-### Parameters
+### Parameters (planned defaults)
 *   `num_frames=16` per segment
 *   FPS: **8–12 fps**
 *   Chaining: pass last-frame latent → next segment
@@ -88,39 +93,35 @@ This document is the **single source of truth** for your entire anime video gene
 
 ---
 
-# 5. LCM Acceleration (Latent Consistency Model)
+# 5. Scheduler & LCM
 
-*   Load LCM LoRA for SDXL/SD2
-*   Steps: **4–6**
-*   CFG: **1.5–2.0**
-*   Scheduler: **LCMScheduler** (automatically applied when LCM LoRA is enabled)
-*   **Benefit**: 10×–20× speedup while maintaining quality
-
-> **Note**: The system uses automatic scheduler selection:
-> - **High-Quality Mode**: DPM++ 2M with Karras sigmas (20-30 steps, CFG 6.0)
-> - **Fast Mode**: LCMScheduler with LCM LoRA (4-6 steps, CFG 1.7).
+*   **Default (enabled):** High-quality DPM++ 2M (custom `SDXLAnime_BestHQScheduler`)
+    * Karras sigmas, solver_order=3 midpoint, no refiner
+    * Profiles:
+        * `768_long`: 22 steps, CFG 6.0
+        * `1024_hq`: 90 steps, CFG 6.5
+*   **Fast path (optional):** LCM LoRA + LCMScheduler (4–6 steps, CFG 1.7) — currently **off by default** until quality sign-off.
 
 ---
 
-# 6. Inference Optimizations
+# 6. Inference Optimizations (implemented)
 
-*   Use SDPA / Flash Attention (PyTorch 2.x)
-*   Enable `torch.compile(unet, mode="max-autotune")`
-*   fp16 / bf16 everywhere
-*   Disable safety checker
-*   Use deterministic seeding
-*   **Automatic Scheduler Selection**: No manual scheduler configuration needed
-    * High-quality mode uses DPM++ 2M with Karras sigmas
-    * Fast mode (LCM) automatically switches to LCMScheduler
+*   Manual FP32 VAE decode to eliminate green-tint artifacts
+*   Pipeline caching (per VAE selection)
+*   Optional `--torch-compile` (`torch.compile(unet, mode="reduce-overhead")`)
+*   SDPA / Flash Attention via PyTorch 2.x
+*   Deterministic seeding
+*   CPU offload attempted when available
+*   Safety checker disabled
 
 ---
 
 # 7. Prompting Strategy
 
-### Positive Prompt Template
+### Positive Prompt Template (matches active LoRAs)
 ```
 (masterpiece, anime, clean cel-shading), detailed eyes, vivid colors,
-<lora:pastelAnimeXL:0.8>, <lora:animeFlatColorXL:0.25>,
+<lora:pastelAnimeXL:0.8>, <lora:ani40_stabilizer:0.4>, <lora:noob:0.2>,
 1 girl, flowing hair, dynamic pose, dramatic lighting
 ```
 
@@ -139,9 +140,9 @@ text, distorted face, unstable shading
 *   **Rule**: This image MUST be generated by your model, not imported.
 *   Scheduler is automatically selected (DPM++ 2M for HQ, LCMScheduler if LCM enabled).
 
-## **Step 2 — (Optional) Extract Control Signal**
-*   If using ControlNet: Run OpenPose/Depth preprocessor on the *generated* image from Step 1.
-*   Use this internal map to guide the video generation.
+## **Step 2 — (Planned) Extract Control Signal**
+*   If using ControlNet: Run OpenPose/Depth/LineArt preprocessors on the *generated* image from Step 1.
+*   Use this internal map to guide the video generation (no external inputs).
 
 ## **Step 3 — Initialize AnimateDiff**
 *   Load Motion Model
@@ -179,7 +180,7 @@ text, distorted face, unstable shading
 
 # 10. Definition of Done
 
-*   Reproducible SDXL/SD2 pipeline.
+*   Reproducible SDXL pipeline (SD2 optional but not yet implemented).
 *   1–3 high-quality anime stills.
 *   8–10 second stable anime video.
 *   **Full compliance with contest rules (No external inputs).**

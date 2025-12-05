@@ -53,13 +53,13 @@ STYLE_LORAS: list[LoRAConfig] = [
         weight_name="pastel-anime-xl.safetensors",  # Specific weight file
     ),
     # Note: Additional style LoRA needed - disabled for now
-    # LoRAConfig(
-    #     name="Ani40 Stabilizer",
-    #     path="/root/lora/ani40_stabilizer_v0.1.safetensors",
-    #     weight=0.4,
-    #     adapter_name="ani_stabilizer",
-    #     type="style",
-    # ),
+    LoRAConfig(
+        name="Ani40 Stabilizer",
+        path="/root/lora/ani40_stabilizer_v0.1.safetensors",
+        weight=0.4,
+        adapter_name="ani_stabilizer",
+        type="style",
+    ),
     # LoRAConfig(
     #     name="Add Detail",
     #     path="/root/lora/add_detail_xl.safetensors",
@@ -67,13 +67,13 @@ STYLE_LORAS: list[LoRAConfig] = [
     #     adapter_name="add_detail",
     #     type="style",
     # ),
-    # LoRAConfig(
-    #     name="Noob",
-    #     path="/root/lora/noob.safetensors",
-    #     weight=0.6,
-    #     adapter_name="noob",
-    #     type="style",
-    # ),
+    LoRAConfig(
+        name="Noob",
+        path="/root/lora/noob.safetensors",
+        weight=0.2,
+        adapter_name="noob",
+        type="style",
+    ),
 ]
 
 # Character LoRAs - identity consistency (use max 1)
