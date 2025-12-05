@@ -38,7 +38,7 @@ def test_generate_image_with_lcm_profile():
             backbone="sdxl",
             profile_name="768_lcm",
             scheduler_mode="dpm",
-            seed=456,
+            seed=123,
             out_path=str(out_path),
         )
         

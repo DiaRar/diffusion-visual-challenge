@@ -15,6 +15,7 @@ import json
 import logging
 import subprocess
 import sys
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -22,6 +23,10 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 import torch
 from PIL import Image
+
+# Suppress warnings for cleaner output (TODO: re-enable when ControlNet integration is stable)
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 if TYPE_CHECKING:
     from diffusers import StableDiffusionXLPipeline
@@ -256,6 +261,9 @@ def generate_single_image(
     vae_fp32_decode: bool = False,
     controlnet_path: str | None = None,
     controlnet_images: str | None = None,
+    controlnet_type: str | None = None,  # "pose", "depth", "canny", "lineart"
+    control_image: Image.Image | None = None,  # Direct PIL Image input
+    controlnet_conditioning_scale: float = 0.8,  # How strongly to follow control map
     torch_compile: bool = False,
     use_custom_vae: bool = False,
 ) -> Path:
@@ -360,8 +368,55 @@ def generate_single_image(
             logger.error(f"Failed to load LoRAs: {e}")
             raise RuntimeError(f"LoRA loading failed: {e}") from e
 
-    # Apply ControlNet if provided (Logic omitted for brevity, matches original)
-    # ... (ControlNet loading logic remains same as original) ...
+    # Apply ControlNet if provided
+    control_image_prepared = None
+    if control_image is not None or controlnet_images is not None:
+        if controlnet_type is None:
+            raise ValueError(
+                "controlnet_type must be specified when using control images. "
+                "Options: 'pose', 'depth', 'canny', 'lineart'"
+            )
+
+        logger.info(f"Loading ControlNet: {controlnet_type}")
+
+        # Import ControlNet loader
+        from infer.controlnet_loader import (
+            load_controlnet,
+            create_controlnet_pipeline,
+            prepare_control_image,
+        )
+
+        # Load ControlNet model (device managed by enable_model_cpu_offload)
+        controlnet = load_controlnet(
+            controlnet_type=controlnet_type,
+            torch_dtype=torch.float16,
+        )
+
+        # Convert pipeline to ControlNet pipeline
+        pipeline = create_controlnet_pipeline(pipeline, controlnet)
+
+        # Prepare control image
+        if control_image is not None:
+            # Direct PIL Image provided
+            control_image_prepared = prepare_control_image(
+                control_image, width=profile.width, height=profile.height
+            )
+        elif controlnet_images is not None:
+            # Path provided - load image
+            control_image_path = Path(controlnet_images)
+            if not control_image_path.exists():
+                raise FileNotFoundError(
+                    f"Control image not found: {control_image_path}"
+                )
+            control_image_prepared = Image.open(control_image_path)
+            control_image_prepared = prepare_control_image(
+                control_image_prepared, width=profile.width, height=profile.height
+            )
+
+        logger.info(
+            f"✓ ControlNet enabled: {controlnet_type} "
+            f"(conditioning_scale={controlnet_conditioning_scale})"
+        )
 
     # Enable torch.compile if requested
     if torch_compile and hasattr(pipeline, "unet"):
@@ -376,16 +431,29 @@ def generate_single_image(
         # and the "green tint" artifact.
         logger.info("Generating latents (FP16)...")
         with torch.no_grad():
-            result = pipeline(
-                prompt=prompt,
-                height=profile.height,
-                width=profile.width,
-                num_inference_steps=actual_steps,
-                guidance_scale=profile.guidance_scale,
-                generator=generator,
-                negative_prompt=negative_prompt,
-                output_type="latent",  # <--- CRITICAL: Get latents, do not decode yet
-            )
+            # Prepare pipeline call arguments
+            pipeline_kwargs = {
+                "prompt": prompt,
+                "height": profile.height,
+                "width": profile.width,
+                "num_inference_steps": actual_steps,
+                "guidance_scale": profile.guidance_scale,
+                "generator": generator,
+                "negative_prompt": negative_prompt,
+                "output_type": "latent",  # <--- CRITICAL: Get latents, do not decode yet
+            }
+
+            # Add control image if ControlNet is enabled
+            if control_image_prepared is not None:
+                pipeline_kwargs["image"] = control_image_prepared
+                pipeline_kwargs["controlnet_conditioning_scale"] = (
+                    controlnet_conditioning_scale
+                )
+                logger.info(
+                    f"Using ControlNet conditioning (scale={controlnet_conditioning_scale})"
+                )
+
+            result = pipeline(**pipeline_kwargs)
             latents = result.images  # This is the latent tensor [Batch, C, H, W]
 
         # 2. MANUAL ROBUST DECODE
@@ -513,13 +581,26 @@ def parse_args() -> argparse.Namespace:
         "--controlnet",
         type=str,
         default=None,
-        help="Path to ControlNet model or model ID",
+        help="Path to ControlNet model or model ID (deprecated - use --controlnet-type)",
+    )
+    _ = parser.add_argument(
+        "--controlnet-type",
+        type=str,
+        default=None,
+        choices=["pose", "depth", "canny", "lineart"],
+        help="Type of ControlNet to use: 'pose', 'depth', 'canny', or 'lineart'",
     )
     _ = parser.add_argument(
         "--controlnet-images",
         type=str,
         default=None,
-        help="Path to conditioning images for ControlNet (comma-separated or single path)",
+        help="Path to conditioning image for ControlNet (pose/depth/edge map)",
+    )
+    _ = parser.add_argument(
+        "--controlnet-scale",
+        type=float,
+        default=0.8,
+        help="ControlNet conditioning scale (0.0-2.0, default: 0.8). Higher = stronger control",
     )
     _ = parser.add_argument(
         "--torch-compile",
@@ -568,6 +649,10 @@ def main() -> None:
             vae_fp32_decode=cast(bool, args.vae_fp32_decode),
             controlnet_path=cast(str | None, args.controlnet),
             controlnet_images=cast(str | None, args.controlnet_images),
+            controlnet_type=cast(str | None, getattr(args, "controlnet_type", None)),
+            controlnet_conditioning_scale=cast(
+                float, getattr(args, "controlnet_scale", 0.8)
+            ),
             torch_compile=cast(bool, args.torch_compile),
             use_custom_vae=cast(bool, args.use_custom_vae),
         )

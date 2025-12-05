@@ -389,3 +389,97 @@ def generate_keyframe_with_maps(
 
     return keyframe_image, maps, saved_paths
 
+
+def generate_with_control_maps(
+    prompt: str,
+    control_maps: ControlMaps,
+    controlnet_type: str = "pose",
+    seed: int = 123,
+    profile_name: str = "768_long",
+    controlnet_conditioning_scale: float = 0.8,
+    use_custom_vae: bool = False,
+    **kwargs,
+) -> Image.Image:
+    """
+    Generate an image using extracted control maps.
+
+    This demonstrates how control maps guide generation - the output should
+    follow the structure defined by the control maps (pose, depth, or edge).
+
+    Args:
+        prompt: Text prompt for generation
+        control_maps: ControlMaps object with extracted maps
+        controlnet_type: Type of ControlNet to use ("pose", "depth", "canny", "lineart")
+        seed: Random seed
+        profile_name: Profile name
+        controlnet_conditioning_scale: How strongly to follow control map (0.0-2.0)
+        use_custom_vae: Whether to use custom VAE
+        **kwargs: Additional arguments for generate_single_image
+
+    Returns:
+        Generated PIL Image following the control map structure
+
+    Example:
+        >>> # Generate keyframe and extract maps
+        >>> kf, maps, _ = generate_keyframe_with_maps("anime girl", seed=123)
+        >>> # Generate new image with same pose
+        >>> new_img = generate_with_control_maps(
+        ...     "anime girl, different outfit",
+        ...     maps,
+        ...     controlnet_type="pose"
+        ... )
+    """
+    from infer.generate_image import generate_single_image
+    from pathlib import Path
+    import tempfile
+
+    # Select the appropriate control image based on type
+    control_image = None
+    if controlnet_type == "pose" and control_maps.pose is not None:
+        control_image = control_maps.pose
+    elif controlnet_type == "depth" and control_maps.depth is not None:
+        control_image = control_maps.depth
+    elif controlnet_type in ("canny", "lineart") and control_maps.edge is not None:
+        control_image = control_maps.edge
+    else:
+        available = []
+        if control_maps.pose is not None:
+            available.append("pose")
+        if control_maps.depth is not None:
+            available.append("depth")
+        if control_maps.edge is not None:
+            available.append("canny/lineart")
+        raise ValueError(
+            f"Control map for '{controlnet_type}' not available. "
+            f"Available maps: {available}"
+        )
+
+    # Generate image with ControlNet
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        generated_path = generate_single_image(
+            prompt=prompt,
+            profile_name=profile_name,
+            seed=seed,
+            out_path=tmp_path,
+            controlnet_type=controlnet_type,
+            control_image=control_image,
+            controlnet_conditioning_scale=controlnet_conditioning_scale,
+            use_custom_vae=use_custom_vae,
+            **kwargs,
+        )
+
+        # Load and return generated image
+        generated_image = Image.open(generated_path)
+        logger.info(f"✓ Generated image with ControlNet ({controlnet_type})")
+        return generated_image
+
+    finally:
+        # Clean up temp file
+        try:
+            Path(tmp_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
