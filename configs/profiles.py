@@ -46,17 +46,17 @@ PROFILES: Final[dict[str, Profile]] = {
         name="768_long",
         height=768,
         width=768,
-        num_inference_steps=22,
-        guidance_scale=6.0,
+        num_inference_steps=26,
+        guidance_scale=6.5,
         description="Default profile: 768x768, 22 steps, CFG 6.0 - Best balance",
     ),
     "1024_hq": Profile(
         name="1024_hq",
         height=1024,
         width=1024,
-        num_inference_steps=90,
+        num_inference_steps=26,
         guidance_scale=6.5,
-        description="High quality profile: 1024x1024, 90 steps, CFG 6.0 - Maximum detail",
+        description="High quality profile: 1024x1024, 26 steps, CFG 6.5 - Maximum detail",
     ),
     # LCM fast sampling profiles (use with LCM LoRA)
     "768_lcm": Profile(

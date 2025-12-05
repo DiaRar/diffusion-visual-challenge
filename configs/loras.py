@@ -47,7 +47,7 @@ STYLE_LORAS: list[LoRAConfig] = [
     LoRAConfig(
         name="Pastel Anime XL",
         path="Linaqruf/pastel-anime-xl-lora",  # HuggingFace ID
-        weight=0.8,
+        weight=0.6,
         adapter_name="pastel_anime",
         type="style",
         weight_name="pastel-anime-xl.safetensors",  # Specific weight file
@@ -56,14 +56,14 @@ STYLE_LORAS: list[LoRAConfig] = [
     LoRAConfig(
         name="Ani40 Stabilizer",
         path="/root/lora/ani40_stabilizer_v0.1.safetensors",
-        weight=0.4,
+        weight=0.3,
         adapter_name="ani_stabilizer",
         type="style",
     ),
     # LoRAConfig(
     #     name="Add Detail",
     #     path="/root/lora/add_detail_xl.safetensors",
-    #     weight=0.5,
+    #     weight=-0.5,
     #     adapter_name="add_detail",
     #     type="style",
     # ),

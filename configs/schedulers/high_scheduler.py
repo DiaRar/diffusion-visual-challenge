@@ -114,6 +114,9 @@ def apply_best_hq_scheduler(
             use_lu_lambdas=bool(use_lu_lambdas),
             use_exponential_sigmas=False,
             use_beta_sigmas=False,
+            beta_schedule="linear",
+            clip_sample=False,
+
             # leave prediction_type as-is from SDXL config (usually "epsilon")
         )
     )

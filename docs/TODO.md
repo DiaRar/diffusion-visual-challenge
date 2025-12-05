@@ -57,6 +57,7 @@ This TODO tracks the implemented pipeline and remaining work under contest rules
   * edge_map = canny/lineart(frame) ✓
 * [x] Ensure **NO external image paths** accepted ✓ (enforced in generate_image.py)
 * [x] Enforce `--internal_controlnet_only` (reject external files) ✓
+* [x] Wire ControlNet conditioning into video path (OpenPose + Depth + Canny defaults)
 
 ### Sparse / Keyframe Conditioning
 
@@ -92,8 +93,9 @@ This TODO tracks the implemented pipeline and remaining work under contest rules
 
 * [ ] Benchmark current profiles (include manual FP32 decode cost)
 * [ ] Evaluate `--torch-compile` (`reduce-overhead` already wired; test gains)
-* [ ] Enforce SDPA / Flash Attention validation
+* [x] Enforce SDPA / Flash Attention validation
 * [ ] Add UNet tiling support (optional)
+* [x] VAE fp32 stability enforced in image + video paths (decode/encode)
 * [ ] Benchmark speeds:
 
   * Single-frame
