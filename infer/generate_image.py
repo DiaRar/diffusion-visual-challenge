@@ -162,6 +162,37 @@ def _export_run_metadata(
     return run_json_path
 
 
+def _use_local_unet(pipeline: "StableDiffusionXLPipeline") -> "StableDiffusionXLPipeline":
+    """
+    Replace the pipeline UNet with the local implementation from `unets/unet_2d.py`.
+    Keeps weights and device/dtype identical to the originally loaded UNet.
+    """
+    try:
+        from unets.unet_2d import UNet2DConditionModel
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"Local UNet import failed, keeping default: {exc}")
+        return pipeline
+
+    base_unet = pipeline.unet
+    device = next(base_unet.parameters()).device
+    dtype = next(base_unet.parameters()).dtype
+
+    try:
+        local_unet_or_tuple = UNet2DConditionModel.from_config(base_unet.config)
+        if isinstance(local_unet_or_tuple, tuple):
+            local_unet: UNet2DConditionModel = local_unet_or_tuple[0]
+        else:
+            local_unet = cast(UNet2DConditionModel, local_unet_or_tuple)
+        _ = local_unet.load_state_dict(base_unet.state_dict())
+        local_unet.to(device=device, dtype=dtype)
+        pipeline.unet = local_unet
+        logger.info("✓ Swapped pipeline UNet with local `unets.unet_2d.UNet2DConditionModel`")
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"Failed to swap to local UNet, using default: {exc}")
+
+    return pipeline
+
+
 def _get_pipeline(
     backbone: str, use_custom_vae: bool = False
 ) -> "StableDiffusionXLPipeline":
@@ -235,6 +266,9 @@ def _get_pipeline(
     # 4. Explicitly ensure VAE stays in Float32 (for both custom and default)
     # This is critical for the robust manual decode strategy
     pipeline.vae.to(dtype=torch.float32)
+
+    # 4.5 Swap in local UNet implementation for any project-specific patches
+    pipeline = _use_local_unet(pipeline)
 
     # Try to enable CPU offload if accelerate is available
     try:
