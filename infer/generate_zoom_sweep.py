@@ -20,7 +20,7 @@ import torch
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from configs.loras import get_active_loras, lora_summary, LoRAConfig
+from configs.loras import get_active_loras, lora_summary, LoRAConfig, STYLE_LORAS
 from configs.profiles import get_profile
 from configs.schedulers.high_scheduler import apply_best_hq_scheduler
 
@@ -66,8 +66,15 @@ def load_pipeline_with_loras():
     # Apply scheduler
     pipeline = apply_best_hq_scheduler(pipeline, use_karras_sigmas=True)
 
-    # Load all LoRAs once
+    # Load ALL style LoRAs - we'll vary zoom weight while keeping others fixed
     active_loras = get_active_loras(include_lcm=False)
+    
+    # Verify zoom LoRA exists
+    zoom_found = any(lora.adapter_name == "zoom" for lora in active_loras)
+    if not zoom_found:
+        raise RuntimeError("Zoom LoRA not found in active LoRAs!")
+    
+    logger.info("Loading all style LoRAs (zoom weight will be varied, others stay fixed)")
     logger.info(lora_summary(active_loras))
 
     adapter_names = []
@@ -166,7 +173,8 @@ def main() -> None:
     steps = 20
 
     # Generate 10 weights uniformly from -1 to 1
-    zoom_weights: list[float] = [float(x) for x in np.linspace(-1, 1, 31)]
+    zoom_weights: list[float] = [float(x) for x in np.linspace(-0.5, 0.5, 21)]
+    
 
     print(f"Generating {len(zoom_weights)} images with zoom weights:")
     print(f"  {zoom_weights}")
@@ -178,10 +186,10 @@ def main() -> None:
     print("✓ Pipeline ready!\n")
 
     for i, zw in enumerate(zoom_weights):
-        print(f"[{i+1}/10] Generating with zoom_weight = {zw:.3f}...")
+        print(f"[{i+1}/{len(zoom_weights)}] Generating with zoom_weight = {zw:.3f}...")
 
         weight_str = f"{zw:+.2f}".replace(".", "p").replace("-", "neg").replace("+", "pos")
-        out_path = f"outputs/zoom_sweep/zoom_{i:02d}_w{weight_str}.png"
+        out_path = f"outputs/zoom_sweep_styled/zoom_{i:02d}_w{weight_str}.png"
 
         try:
             _ = generate_with_zoom_weight(
@@ -202,8 +210,9 @@ def main() -> None:
             raise
 
     print("\n" + "=" * 60)
-    print("✓ All 10 images generated successfully!")
-    print(f"  Output directory: outputs/zoom_sweep/")
+    print(f"✓ All {len(zoom_weights)} images generated successfully!")
+    print(f"  Output directory: outputs/zoom_sweep_styled/")
+    print(f"  Style LoRAs kept at fixed weights, only zoom varied.")
 
 
 if __name__ == "__main__":

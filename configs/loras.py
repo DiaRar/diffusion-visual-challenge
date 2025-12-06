@@ -85,7 +85,11 @@ STYLE_LORAS: list[LoRAConfig] = [
     # LoRAConfig(
     #     name="Zoom",
     #     path="/root/lora/zoom.safetensors",
+<<<<<<< HEAD
     #     weight=1.0,
+=======
+    #     weight=0.0,
+>>>>>>> 698f380 (final setup)
     #     adapter_name="zoom",
     #     type="style",
     # ),
