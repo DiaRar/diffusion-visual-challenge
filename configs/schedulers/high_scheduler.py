@@ -100,7 +100,7 @@ def apply_best_hq_scheduler(
     cfg = copy.deepcopy(raw_cfg)
 
     # ---- HQ overrides (safe + standard) ----
-    # DPM++ 2M (solver_order=2) is the most reliable under CFG.
+    # DPM++ 2M (solver_order=2) is the most reliable under CFG but 3M is quite nice
     cfg.update(
         dict(
             algorithm_type="dpmsolver++",

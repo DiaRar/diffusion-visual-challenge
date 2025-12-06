@@ -265,3 +265,29 @@ STYLE_LORAS: list[LoRAConfig] = [
 ## License and Citations
 - Track dataset licenses in manifests.
 - Keep references in the final write-up per `docs/FINAL.md`.
+
+
+
+```bash
+cd /root/diffusion-visual-challenge
+
+ACCELERATE_DISABLE_RICH=1 \
+.venv/bin/accelerate launch \
+  --num_processes=1 --num_machines=1 --mixed_precision=bf16 --dynamo_backend=no \
+  scripts/train_text_to_image_lora_sdxl.py \
+  --pretrained_model_name_or_path stabilityai/stable-diffusion-xl-base-1.0 \
+  --train_data_dir sdxl_anime_lora_dataset \
+  --image_column image --caption_column text \
+  --resolution 1024 --center_crop --random_flip \
+  --train_batch_size 2 --gradient_accumulation_steps 2 \
+  --learning_rate 1e-4 --lr_scheduler cosine --lr_warmup_steps 500 \
+  --max_train_steps 10000 \
+  --snr_gamma 5.0 --noise_offset 0.03 \
+  --mixed_precision bf16 \
+  --checkpointing_steps 1000 \
+  --output_dir outputs/sdxl_anime_lora \
+  --rank 64 --gradient_checkpointing \
+  --seed 42 \
+  --validation_prompt "masterpiece, best quality, anime girl portrait" \
+  --num_validation_images 1 --validation_epochs 500
+  ```

@@ -47,16 +47,16 @@ STYLE_LORAS: list[LoRAConfig] = [
     LoRAConfig(
         name="Pastel Anime XL",
         path="Linaqruf/pastel-anime-xl-lora",  # HuggingFace ID
-        weight=0.6,
+        weight=0.8,
         adapter_name="pastel_anime",
         type="style",
         weight_name="pastel-anime-xl.safetensors",  # Specific weight file
     ),
-    # # Note: Additional style LoRA needed - disabled for now
+    # # # Note: Additional style LoRA needed - disabled for now
     LoRAConfig(
         name="Ani40 Stabilizer",
         path="/root/lora/ani40_stabilizer_v0.1.safetensors",
-        weight=0.3,
+        weight=0.4,
         adapter_name="ani_stabilizer",
         type="style",
     ),
@@ -67,6 +67,14 @@ STYLE_LORAS: list[LoRAConfig] = [
     #     adapter_name="add_detail",
     #     type="style",
     # ),
+
+    LoRAConfig(
+        name="Naruto",
+        path="/root/diffusion-visual-challenge/outputs/sdxl_anime_lora/pytorch_lora_weights.safetensors",
+        weight=-0.5,
+        adapter_name="Naruto",
+        type="style",
+    ),
     LoRAConfig(
         name="Noob",
         path="/root/lora/noob.safetensors",
@@ -74,13 +82,13 @@ STYLE_LORAS: list[LoRAConfig] = [
         adapter_name="noob",
         type="style",
     ),
-    LoRAConfig(
-        name="Zoom",
-        path="/root/lora/zoom.safetensors",
-        weight=1.0,
-        adapter_name="zoom",
-        type="style",
-    ),
+    # LoRAConfig(
+    #     name="Zoom",
+    #     path="/root/lora/zoom.safetensors",
+    #     weight=1.0,
+    #     adapter_name="zoom",
+    #     type="style",
+    # ),
 ]
 
 # Character LoRAs - identity consistency (use max 1)

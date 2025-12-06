@@ -214,6 +214,11 @@ def _get_pipeline(
     # CONSTRAINT CHECK: Only allow SDXL
     ALLOWED_MODEL = "stabilityai/stable-diffusion-xl-base-1.0"
 
+    # Prefer bf16 on capable GPUs (e.g., A100/Hopper); fall back to fp16 otherwise
+    # use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+    inference_dtype =  torch.float16
+    logger.info(f"Using inference dtype: {inference_dtype}")
+
     if backbone_key != "sdxl":
         raise RuntimeError(
             f"Unauthorized backbone '{backbone}'. Only SDXL is supported. "
@@ -245,7 +250,7 @@ def _get_pipeline(
         pipeline = StableDiffusionXLPipeline.from_pretrained(
             ALLOWED_MODEL,
             vae=vae,
-            torch_dtype=torch.float16,
+            torch_dtype=inference_dtype,
             variant="fp16",
             use_safetensors=True,
         )
@@ -254,7 +259,7 @@ def _get_pipeline(
         # Load SDXL pipeline with default VAE
         pipeline = StableDiffusionXLPipeline.from_pretrained(
             ALLOWED_MODEL,
-            torch_dtype=torch.float16,
+            torch_dtype=inference_dtype,
             variant="fp16",
             use_safetensors=True,
         )
